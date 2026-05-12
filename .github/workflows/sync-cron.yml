@@ -11,7 +11,29 @@ jobs:
     timeout-minutes: 5
     steps:
       - name: Trigger production sync
+        env:
+          CRON_URL: ${{ secrets.CRON_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
         run: |
-          curl -fsS \
-            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
-            "${{ secrets.CRON_URL }}"
+          set -euo pipefail
+
+          if [ -z "$CRON_URL" ]; then
+            echo "CRON_URL secret is empty"
+            exit 1
+          fi
+
+          if [ -z "$CRON_SECRET" ]; then
+            echo "CRON_SECRET secret is empty"
+            exit 1
+          fi
+
+          status=$(curl -sS -o response.txt -w "%{http_code}" \
+            -H "Authorization: Bearer $CRON_SECRET" \
+            "$CRON_URL")
+
+          echo "HTTP status: $status"
+          cat response.txt
+
+          if [ "$status" != "200" ]; then
+            exit 1
+          fi
