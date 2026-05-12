@@ -1,0 +1,256 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../app/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Shop {
+  id           String        @id
+  name         String
+  color        String?
+  phones       String?
+  isVisible    Boolean       @default(true)
+  syncedAt     DateTime      @default(now())
+  orders        Order[]
+  sales         Sale[]
+  employees     Employee[]
+  cashEntries   CashEntry[]
+  cashBalance   CashBalance?
+}
+
+model Status {
+  id   String @id
+  name String
+}
+
+model Employee {
+  id            String   @id
+  name          String
+  role          String   // "manager" | "master" | "all" (из LiveSklad)
+  shopId        String
+  shop          Shop     @relation(fields: [shopId], references: [id])
+  // Smarthub авторизация
+  appRole       Role?    // null = нет доступа в систему
+  passwordHash  String?
+  isPasswordSet Boolean  @default(false)
+  syncedAt      DateTime @default(now()) @updatedAt
+}
+
+model Order {
+  id                  String        @id
+  number              String?
+  num                 Int?
+  shopId              String
+  shop                Shop          @relation(fields: [shopId], references: [id])
+
+  // Даты
+  dateCreate          DateTime?
+  dateFinish          DateTime?
+  dateClose           DateTime?
+  lastAction          DateTime?
+
+  // Устройство
+  typeDevice          String?
+  typeDeviceId        String?
+  brand               String?
+  model               String?
+  sn                  String?
+  device              String?
+  problem             String?
+  completeSet         String?
+  appearance          String?
+
+  // Участники
+  managerName         String?
+  managerId           String?
+  createdByName       String?
+  createdById         String?
+  masterName          String?
+  masterId            String?
+  closeManagerName    String?   // кто выдал клиенту
+
+  // Клиент
+  counteragentName    String?   // имя клиента
+
+  // Статус
+  statusId            String?
+  statusName          String?
+  statusColor         String?
+  statusType          String?
+
+  // Тип заказа
+  orderTypeName       String?
+  orderTypeId         String?
+
+  // Прочее
+  isUrgent            Boolean  @default(false)
+  isVisible           Boolean  @default(true)
+  approximatePrice    String?
+  orderNode           String?
+  color               String?
+  howKnowName         String?
+  counteragentRating  Int?
+  counteragentPhone   String?
+
+  // Финансы (прямо из API)
+  revenue             Float    @default(0)  // cash.order
+  orderReturn         Float    @default(0)  // cash.orderReturn
+  paymentType         String?
+
+  isReturn            Boolean  @default(false)
+  syncedAt            DateTime @default(now()) @updatedAt
+
+  positions           OrderPosition[]
+}
+
+model OrderPosition {
+  id                String   @id   // positionId из API
+  orderId           String
+  order             Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  name              String
+  isWork            Boolean          // true = работа, false = запчасть/товар
+  price             Float    @default(0)   // прайс
+  soldPrice         Float    @default(0)   // цена продажи
+  count             Float    @default(1)
+  purchasePriceSumm Float    @default(0)   // себестоимость
+  guaranteeInDay    Int?
+  code              Int?
+  syncedAt          DateTime @default(now())
+
+  @@index([orderId])
+}
+
+model Sale {
+  id         String  @id
+  number     String?
+  shopId     String
+  shop       Shop    @relation(fields: [shopId], references: [id])
+
+  date       DateTime?
+  dateChange DateTime?
+
+  // Продавец
+  sellerName String?
+
+  // Финансы (из API)
+  cashMoney   Float @default(0)  // cash.money   — наличные
+  cashBank    Float @default(0)  // cash.bank    — безнал
+  cashInvoice Float @default(0)  // cash.invoice — счёт
+  revenue     Float @default(0)  // сумма: cashMoney + cashBank + cashInvoice
+  refund      Float @default(0)  // cash.orderReturn
+  paymentType String?
+
+  isReturn Boolean  @default(false)
+  syncedAt DateTime @default(now()) @updatedAt
+
+  positions SalePosition[]
+}
+
+model SalePosition {
+  id                Int      @id @default(autoincrement())
+  saleId            String
+  sale              Sale     @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  name              String
+  isWork            Boolean
+  price             Float    @default(0)
+  soldPrice         Float    @default(0)
+  count             Float    @default(1)
+  purchasePriceSumm Float    @default(0)
+  code              Int?
+  syncedAt          DateTime @default(now())
+
+  @@index([saleId])
+}
+
+enum Role {
+  MANAGER
+  ADMIN
+}
+
+
+model ScheduleSlot {
+  id           Int      @id @default(autoincrement())
+  location     String
+  slotIndex    Int      @default(0)
+  date         DateTime
+  employeeName String?
+  updatedAt    DateTime @updatedAt
+
+  @@unique([location, slotIndex, date])
+  @@index([date])
+}
+
+model EmployeeLeave {
+  id           Int      @id @default(autoincrement())
+  employeeName String
+  date         DateTime
+  leaveType    String   // "VACATION" | "SICK"
+  createdAt    DateTime @default(now())
+
+  @@unique([employeeName, date])
+  @@index([date])
+}
+
+model TargetAction {
+  id              Int       @id @default(autoincrement())
+  date            DateTime
+  actionType      String                // "Выплата Зарплаты" | "Доначисление Оклада" | "Бонус" | "Штраф" | "Работа по ремонту"
+  subType         String?
+  employeeName    String
+  shopId          String?
+  amount          Float
+  comment         String?
+  source          String    @default("MANUAL") // "MANUAL" | "IMPORT" | "AUTO"
+  responsibleName String?
+  paymentDate     DateTime?
+  // Для Бонус/Зарплата за Заказ
+  orderId         String?
+  isHighMargin    Boolean   @default(false)
+  // Для Работа по ремонту
+  isTaken         Boolean   @default(false)
+  takenAt         DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([orderId])
+  @@index([employeeName, date])
+}
+
+model SyncLog {
+  id         Int       @id @default(autoincrement())
+  entity     String
+  status     String
+  count      Int       @default(0)
+  error      String?
+  startedAt  DateTime  @default(now())
+  finishedAt DateTime?
+}
+
+model CashEntry {
+  id         Int      @id @default(autoincrement())
+  date       DateTime @default(now())
+  shopId     String
+  shop       Shop     @relation(fields: [shopId], references: [id])
+  type       String   // тип операции
+  payMethod  String   // CASH | CARD | TRANSFER
+  isIncome   Boolean
+  amount     Float
+  comment    String?
+  authorName String
+  createdAt  DateTime @default(now())
+
+  @@index([shopId])
+  @@index([date])
+}
+
+model CashBalance {
+  shopId     String   @id
+  shop       Shop     @relation(fields: [shopId], references: [id])
+  cashAmount Float    @default(0)  // начальный остаток наличных
+  cardAmount Float    @default(0)  // начальный остаток по терминалу
+  updatedAt  DateTime @updatedAt
+  updatedBy  String   @default("")
+}

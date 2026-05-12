@@ -1,36 +1,50 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Smarthub
 
-## Getting Started
+Internal Next.js app for Smarthub operations: orders, sales, schedule, salary/bonuses, cash entries, reports, and admin tools.
 
-First, run the development server:
+## Stack
+
+- Next.js 16
+- React 19
+- Prisma 7
+- PostgreSQL / Supabase
+- Vercel production deploy
+
+## Local Development
 
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Required local environment variables are stored in `.env` and are not committed.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Sync
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Production sync endpoint:
 
-## Learn More
+```text
+GET /api/cron
+Authorization: Bearer <CRON_SECRET>
+```
 
-To learn more about Next.js, take a look at the following resources:
+The endpoint runs only the current delta sync:
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+- orders changed in the last hour by `lastAction`
+- sales in the last hour
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+Order sync also recalculates AUTO bonuses for the changed order:
 
-## Deploy on Vercel
+- `Бонус / За ВМР`: 20% of margin when margin is at least 4,000 RUB
+- `Бонус / За наличность`: 2.5% of margin when payment is cash only
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Deployment
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Production is deployed to Vercel. Vercel Hobby does not support 15-minute cron jobs, so the 15-minute schedule should be handled by an external scheduler calling `/api/cron`.
+
+## Prisma
+
+```bash
+npx prisma generate
+npx prisma db push
+```

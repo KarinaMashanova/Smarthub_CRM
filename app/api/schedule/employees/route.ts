@@ -1,0 +1,20 @@
+import { NextResponse } from 'next/server'
+import { prisma } from '@/lib/db'
+
+export async function GET() {
+  // Все уникальные имена из расписания (+ из Employee таблицы)
+  const [fromSchedule, fromEmployees] = await Promise.all([
+    prisma.scheduleSlot.findMany({
+      where: { employeeName: { not: null } },
+      select: { employeeName: true },
+      distinct: ['employeeName'],
+    }),
+    prisma.employee.findMany({ select: { name: true } }),
+  ])
+
+  const names = new Set<string>()
+  fromSchedule.forEach(s => s.employeeName && names.add(s.employeeName))
+  fromEmployees.forEach(e => names.add(e.name))
+
+  return NextResponse.json(Array.from(names).sort())
+}
