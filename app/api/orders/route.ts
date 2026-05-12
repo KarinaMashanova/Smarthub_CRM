@@ -49,8 +49,7 @@ export async function GET(req: NextRequest) {
   const where: any = { dateClose: { gte: from, lte: to } }
   const and: any[] = []
 
-  if (session.role === 'MANAGER' && session.shopId) {
-    where.shopId = session.shopId
+  if (session.role === 'MANAGER') {
     where.managerName = session.name
   }
   if (session.role === 'ADMIN' && shopId) where.shopId = shopId
@@ -73,8 +72,8 @@ export async function GET(req: NextRequest) {
   }
   if (and.length > 0) where.AND = and
 
-  const baseWhere: any = session.role === 'MANAGER' && session.shopId
-    ? { shopId: session.shopId, managerName: session.name }
+  const baseWhere: any = session.role === 'MANAGER'
+    ? { managerName: session.name }
     : {}
 
   const [orders, statuses, shops, managers, masters, paymentTypes] = await Promise.all([

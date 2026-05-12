@@ -208,6 +208,7 @@ model TargetAction {
   paymentDate     DateTime?
   // Для Бонус/Зарплата за Заказ
   orderId         String?
+  saleId          String?
   isHighMargin    Boolean   @default(false)
   // Для Работа по ремонту
   isTaken         Boolean   @default(false)
@@ -216,6 +217,7 @@ model TargetAction {
   updatedAt       DateTime  @updatedAt
 
   @@index([orderId])
+  @@index([saleId])
   @@index([employeeName, date])
 }
 

@@ -2,6 +2,21 @@ import { prisma } from '@/lib/db'
 import { liveskladFetch, fetchAllPages, sleep } from '@/lib/livesklad/client'
 
 const DELTA_LOOKBACK_MS = 60 * 60 * 1000
+const PAYMENT_ORDER = ['Наличные', 'Безнал', 'Счёт']
+
+function normalizePaymentType(value: string | null) {
+  if (!value) return null
+  const parts = Array.from(new Set(value.split(',').map(p => p.trim()).filter(Boolean)))
+  parts.sort((a, b) => {
+    const ai = PAYMENT_ORDER.indexOf(a)
+    const bi = PAYMENT_ORDER.indexOf(b)
+    if (ai === -1 && bi === -1) return a.localeCompare(b, 'ru')
+    if (ai === -1) return 1
+    if (bi === -1) return -1
+    return ai - bi
+  })
+  return parts.join(', ')
+}
 
 function buildSaleRow(data: any, shopId: string) {
   const cashMoney   = data.cash?.money   ?? 0
@@ -27,12 +42,21 @@ function buildSaleRow(data: any, shopId: string) {
     cashInvoice,
     revenue,
     refund,
-    paymentType: paymentTypes.join(', ') || null,
+    paymentType: normalizePaymentType(paymentTypes.join(', ') || null),
     isReturn,
   }
 }
 
-function buildPositions(data: any) {
+function buildPositions(data: any): Array<{
+  saleId: string
+  name: string
+  isWork: boolean
+  price: number
+  soldPrice: number
+  count: number
+  purchasePriceSumm: number
+  code: number | null
+}> {
   return (data.positions ?? []).map((p: any) => ({
     saleId:            String(data.id),
     name:              p.name ?? '',
@@ -45,7 +69,57 @@ function buildPositions(data: any) {
   }))
 }
 
-async function syncSaleDetail(detail: any, shopId: string) {
+async function upsertSaleBonus(row: ReturnType<typeof buildSaleRow>, positions: ReturnType<typeof buildPositions>) {
+  const existing = await prisma.targetAction.findMany({
+    where: { saleId: String(row.id), source: 'AUTO', actionType: 'Бонус' },
+    select: { id: true, subType: true },
+  })
+  const keepSubTypes: string[] = []
+  const findExisting = (subTypes: string[]) => existing.find(a => subTypes.includes(a.subType ?? ''))
+  const deleteMissing = async (keep: string[]) => {
+    const toDelete = existing.filter(a => !keep.includes(a.subType ?? ''))
+    for (const action of toDelete) await prisma.targetAction.delete({ where: { id: action.id } })
+  }
+
+  if (!row.sellerName || row.isReturn || positions.length === 0) {
+    await deleteMissing([])
+    return
+  }
+
+  const costTotal = positions.reduce((s: number, p) => s + p.purchasePriceSumm, 0)
+  const margin = row.revenue - costTotal
+  const saleRef = row.number ?? row.id
+
+  async function upsertBonus(subType: string, amount: number, comment: string) {
+    keepSubTypes.push(subType)
+    const current = findExisting([subType])
+    const data = { amount, subType, isHighMargin: false, date: row.date ?? new Date(), employeeName: row.sellerName!, shopId: row.shopId, comment }
+    if (current) {
+      await prisma.targetAction.update({ where: { id: current.id }, data })
+    } else {
+      await prisma.targetAction.create({
+        data: {
+          ...data,
+          actionType: 'Бонус',
+          saleId: String(row.id),
+          source: 'AUTO',
+        },
+      })
+    }
+  }
+
+  if (margin > 0 && normalizePaymentType(row.paymentType) === 'Наличные') {
+    await upsertBonus(
+      'За наличность',
+      Math.round(margin * 0.025),
+      `Наличная продажа ${saleRef} | Маржа ${Math.round(margin).toLocaleString('ru-RU')} ₽`,
+    )
+  }
+
+  await deleteMissing(keepSubTypes)
+}
+
+export async function syncSaleDetail(detail: any, shopId: string) {
   const row       = buildSaleRow(detail, shopId)
   const positions = buildPositions(detail)
 
@@ -55,6 +129,7 @@ async function syncSaleDetail(detail: any, shopId: string) {
     await prisma.salePosition.deleteMany({ where: { saleId: row.id } })
     await prisma.salePosition.createMany({ data: positions })
   }
+  await upsertSaleBonus(row, positions)
 }
 
 async function syncSaleList(sales: any[], shopId: string) {

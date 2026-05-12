@@ -34,7 +34,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
 
   // Менеджер видит только заказы, где он указан менеджером.
   if (session.role === 'MANAGER') {
-    const belongs = await prisma.order.count({ where: { id, shopId: session.shopId ?? '', managerName: session.name } })
+    const belongs = await prisma.order.count({ where: { id, managerName: session.name } })
     if (!belongs) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 

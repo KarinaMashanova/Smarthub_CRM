@@ -3,6 +3,21 @@ import { prisma } from '@/lib/db'
 import { getSession } from '@/lib/auth/session'
 
 const PAGE_SIZE = 50
+const PAYMENT_ORDER = ['Наличные', 'Безнал', 'Счёт']
+
+function normalizePaymentType(value: string | null) {
+  if (!value) return null
+  const parts = Array.from(new Set(value.split(',').map(p => p.trim()).filter(Boolean)))
+  parts.sort((a, b) => {
+    const ai = PAYMENT_ORDER.indexOf(a)
+    const bi = PAYMENT_ORDER.indexOf(b)
+    if (ai === -1 && bi === -1) return a.localeCompare(b, 'ru')
+    if (ai === -1) return 1
+    if (bi === -1) return -1
+    return ai - bi
+  })
+  return parts.join(', ')
+}
 
 export async function GET(req: NextRequest) {
   const session = await getSession()
@@ -13,6 +28,8 @@ export async function GET(req: NextRequest) {
   const search = searchParams.get('search')?.trim() ?? ''
   const seller = searchParams.get('seller') ?? ''
   const shop   = searchParams.get('shop')   ?? ''
+  const paymentType = searchParams.get('paymentType') ?? ''
+  const positionMode = searchParams.get('positionMode') ?? 'all'
 
   const now = new Date()
   const from = searchParams.get('from')
@@ -24,9 +41,8 @@ export async function GET(req: NextRequest) {
 
   const where: any = { date: { gte: from, lte: to }, isReturn: false }
 
-  if (session.role === 'MANAGER' && session.shopId) {
-    where.shopId = session.shopId
-    where.OR = [{ sellerName: session.name }, { sellerName: null }]
+  if (session.role === 'MANAGER') {
+    where.sellerName = session.name
   } else if (shop) {
     where.shopId = shop
   }
@@ -39,11 +55,11 @@ export async function GET(req: NextRequest) {
     ]
   }
 
-  const baseWhere: any = session.role === 'MANAGER' && session.shopId
-    ? { shopId: session.shopId }
+  const baseWhere: any = session.role === 'MANAGER'
+    ? { sellerName: session.name }
     : {}
 
-  const [sales, total, sellers, shops, totals] = await Promise.all([
+  const [sales, sellers, shops] = await Promise.all([
     prisma.sale.findMany({
       where,
       select: {
@@ -53,18 +69,16 @@ export async function GET(req: NextRequest) {
         sellerName: true,
         cashMoney: true, cashBank: true,
         revenue: true, refund: true, paymentType: true,
+        isReturn: true,
         positions: {
           select: {
             id: true, name: true, isWork: true,
-            soldPrice: true, count: true, purchasePriceSumm: true,
+            price: true, soldPrice: true, count: true, purchasePriceSumm: true,
           },
         },
       },
       orderBy: { date: 'desc' },
-      skip: (page - 1) * PAGE_SIZE,
-      take: PAGE_SIZE,
     }),
-    prisma.sale.count({ where }),
     prisma.sale.findMany({
       where: { ...baseWhere, sellerName: { not: null } },
       select: { sellerName: true },
@@ -74,25 +88,69 @@ export async function GET(req: NextRequest) {
     session.role === 'ADMIN'
       ? prisma.shop.findMany({ where: { isVisible: true }, select: { id: true, name: true }, orderBy: { name: 'asc' } })
       : Promise.resolve([]),
-    prisma.sale.aggregate({
-      where,
-      _sum: { revenue: true, refund: true, cashMoney: true, cashBank: true },
-      _count: { id: true },
-    }),
   ])
+  const salesWithFinance = sales.map(s => {
+    const hasPositions = s.positions.length > 0
+    const costTotal = s.positions.reduce((sum, p) => sum + p.purchasePriceSumm, 0)
+    const retailTotal = s.positions.reduce((sum, p) => sum + p.price * p.count, 0)
+    const soldTotal = s.positions.reduce((sum, p) => sum + p.soldPrice * p.count, 0)
+    const margin = hasPositions && !s.isReturn ? s.revenue - costTotal : null
+    const retailDelta = hasPositions ? retailTotal - soldTotal : null
+    const normalizedPaymentType = normalizePaymentType(s.paymentType)
+    return {
+      ...s,
+      paymentType: normalizedPaymentType,
+      costTotal: hasPositions && !s.isReturn ? costTotal : null,
+      margin,
+      retailTotal,
+      retailDelta,
+      cashBonus: margin !== null && normalizedPaymentType === 'Наличные' ? Math.round(margin * 0.025) : 0,
+      retailPriceSold: retailDelta !== null && retailDelta <= 0,
+    }
+  })
+  const filteredSales = salesWithFinance.filter(s => {
+    if (paymentType && s.paymentType !== paymentType) return false
+    if (positionMode === 'without') return s.margin === null && !s.isReturn
+    if (positionMode === 'with') return s.margin !== null
+    return true
+  })
+  const total = filteredSales.length
+  const paginatedSales = filteredSales.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
+  const summary = filteredSales.reduce((acc, s) => {
+    acc.revenue += s.isReturn ? 0 : s.revenue
+    acc.cashMoney += s.isReturn ? 0 : s.cashMoney
+    acc.cashBank += s.isReturn ? 0 : s.cashBank
+    acc.refund += s.refund
+    acc.margin += s.margin ?? 0
+    acc.cashBonus += s.cashBonus
+    if (s.margin !== null) acc.withMargin++
+    if (s.margin === null && !s.isReturn) acc.withoutPositions++
+    if (s.retailPriceSold) acc.retailPriceSold++
+    if (s.isReturn || s.refund > 0) acc.returns++
+    acc.count++
+    return acc
+  }, {
+    revenue: 0,
+    cashMoney: 0,
+    cashBank: 0,
+    refund: 0,
+    margin: 0,
+    cashBonus: 0,
+    withMargin: 0,
+    withoutPositions: 0,
+    retailPriceSold: 0,
+    returns: 0,
+    count: 0,
+  })
+  const paymentTypes = Array.from(new Set(salesWithFinance.map(s => s.paymentType).filter(Boolean)))
 
   return NextResponse.json({
-    sales,
+    sales: paginatedSales,
     total,
     pages: Math.ceil(total / PAGE_SIZE),
     sellers: sellers.map(s => s.sellerName).filter(Boolean),
     shops,
-    summary: {
-      revenue:   totals._sum.revenue   ?? 0,
-      cashMoney: totals._sum.cashMoney ?? 0,
-      cashBank:  totals._sum.cashBank  ?? 0,
-      refund:    totals._sum.refund    ?? 0,
-      count:     totals._count.id,
-    },
+    paymentTypes,
+    summary,
   })
 }
