@@ -161,7 +161,7 @@ async function upsertOrderBonus(row: ReturnType<typeof buildOrderRow>, positions
   await deleteMissing(keepSubTypes)
 }
 
-async function syncOrderDetail(data: any) {
+export async function syncOrderDetail(data: any) {
   const row       = buildOrderRow(data)
   const positions = buildPositions(data)
 
