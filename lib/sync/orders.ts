@@ -205,7 +205,7 @@ export async function syncOrdersRange(shopIds: string[], from: Date, to: Date) {
   let total = 0
   for (const shopId of shopIds) {
     const orders = await fetchAllPages<any>(
-      (page) => `/shops/${shopId}/orders?lastAction=${dateFilter}&page=${page}&pageSize=50&sort=lastAction ASC`
+      (page) => `/shops/${shopId}/orders?dateClose=${dateFilter}&page=${page}&pageSize=50&sort=dateClose ASC`
     )
     total += await syncOrderList(orders)
   }

@@ -104,7 +104,7 @@ export default function LoginPage() {
         return
       }
 
-      window.location.href = '/orders'
+      window.location.href = data.role === 'ADMIN' ? '/admin' : '/orders'
     } catch {
       setError('Ошибка соединения')
       setLoading(false)

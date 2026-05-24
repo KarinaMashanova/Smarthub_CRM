@@ -34,7 +34,6 @@ function SetupPasswordForm() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ employeeId, password }),
       })
-
       const data = await res.json()
 
       if (!res.ok) {
@@ -43,11 +42,7 @@ function SetupPasswordForm() {
         return
       }
 
-      if (data.role === 'ADMIN') {
-        router.push('/admin')
-      } else {
-        router.push('/orders')
-      }
+      window.location.href = data.role === 'ADMIN' ? '/admin' : '/orders'
     } catch {
       setError('Ошибка соединения')
       setLoading(false)
