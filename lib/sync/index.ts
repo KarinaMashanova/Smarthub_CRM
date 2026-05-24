@@ -1,7 +1,7 @@
 import { prisma } from '@/lib/db'
 import { syncShops } from './shops'
-import { syncOrdersDelta } from './orders'
-import { syncSalesDelta } from './sales'
+import { syncOrdersDelta, syncOrdersRange } from './orders'
+import { syncSalesDelta, syncSalesRange } from './sales'
 import { syncEmployees } from './employees'
 
 async function logSync(entity: string, fn: () => Promise<number>) {
@@ -39,4 +39,12 @@ export async function runWeeklySync() {
   await logSync('shops', syncShops)
   const ids = await allShopIds()
   await logSync('employees', () => syncEmployees(ids))
+}
+
+// Восстановление данных за произвольный период
+export async function runBackfillSync(from: Date, to: Date): Promise<{ orders: number; sales: number }> {
+  const ids = await allShopIds()
+  const orders = await logSync('orders_backfill', () => syncOrdersRange(ids, from, to))
+  const sales  = await logSync('sales_backfill',  () => syncSalesRange(ids, from, to))
+  return { orders, sales }
 }

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 
 interface SyncLog {
   id: number
@@ -20,11 +20,36 @@ interface Counts {
   scheduleSlots: number
 }
 
+interface WeekResult {
+  from: string
+  to: string
+  orders: number
+  sales: number
+  error?: string
+}
+
 const ENTITY_LABELS: Record<string, string> = {
-  shops:          'Магазины',
-  employees:      'Сотрудники',
-  orders_delta:   'Заказы (дельта)',
-  sales_delta:    'Продажи (дельта)',
+  shops:            'Магазины',
+  employees:        'Сотрудники',
+  orders_delta:     'Заказы (дельта)',
+  sales_delta:      'Продажи (дельта)',
+  orders_backfill:  'Заказы (бэкфилл)',
+  sales_backfill:   'Продажи (бэкфилл)',
+}
+
+function splitIntoWeeks(from: Date, to: Date): { from: Date; to: Date }[] {
+  const weeks: { from: Date; to: Date }[] = []
+  let cursor = new Date(from)
+  while (cursor < to) {
+    const end = new Date(Math.min(cursor.getTime() + 7 * 24 * 60 * 60 * 1000, to.getTime()))
+    weeks.push({ from: new Date(cursor), to: end })
+    cursor = end
+  }
+  return weeks
+}
+
+function fmtDate(iso: string) {
+  return new Date(iso).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' })
 }
 
 function duration(start: string, end: string | null) {
@@ -51,8 +76,16 @@ export default function SyncPage() {
   const [logs, setLogs]     = useState<SyncLog[]>([])
   const [counts, setCounts] = useState<Counts | null>(null)
   const [loading, setLoading]   = useState(true)
-  const [syncing, setSyncing]   = useState(false)
-  const [syncResult, setSyncResult] = useState<string | null>(null)
+
+  const [backfillFrom, setBackfillFrom] = useState('2026-04-01')
+  const [backfillTo,   setBackfillTo]   = useState('2026-05-24')
+  const [backfillRunning, setBackfillRunning] = useState(false)
+  const [backfillResults, setBackfillResults] = useState<WeekResult[]>([])
+  const [backfillTotal,   setBackfillTotal]   = useState(0)
+  const [backfillCurrent, setBackfillCurrent] = useState(0)
+  const [rateLimitUntil,  setRateLimitUntil]  = useState<Date | null>(null)
+  const [rateLimitSecsLeft, setRateLimitSecsLeft] = useState(0)
+  const cancelRef = useRef(false)
 
   const load = useCallback(() => {
     setLoading(true)
@@ -64,23 +97,79 @@ export default function SyncPage() {
 
   useEffect(() => { load() }, [load])
 
-  async function runSync() {
-    setSyncing(true)
-    setSyncResult(null)
-    try {
-      const res = await fetch('/api/sync', { method: 'POST' })
-      const data = await res.json()
-      setSyncResult(data.ok ? 'ok' : data.error ?? 'error')
-    } catch (e: unknown) {
-      setSyncResult(e instanceof Error ? e.message : 'error')
-    } finally {
-      setSyncing(false)
-      load()
+  async function waitForRateLimit(resetAt: Date) {
+    const interval = setInterval(() => {
+      const secsLeft = Math.max(0, Math.ceil((resetAt.getTime() - Date.now()) / 1000))
+      setRateLimitSecsLeft(secsLeft)
+      if (secsLeft === 0) clearInterval(interval)
+    }, 1000)
+    setRateLimitUntil(resetAt)
+    setRateLimitSecsLeft(Math.ceil((resetAt.getTime() - Date.now()) / 1000))
+    await new Promise<void>(resolve => {
+      const check = setInterval(() => {
+        if (Date.now() >= resetAt.getTime() || cancelRef.current) {
+          clearInterval(check)
+          clearInterval(interval)
+          resolve()
+        }
+      }, 500)
+    })
+    setRateLimitUntil(null)
+    setRateLimitSecsLeft(0)
+  }
+
+  async function runWeek(wFrom: Date, wTo: Date): Promise<{ orders: number; sales: number }> {
+    const res = await fetch('/api/admin/backfill', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ from: wFrom.toISOString(), to: wTo.toISOString() }),
+    })
+    const data = await res.json()
+    if (res.status === 429 && data.retryAfter) {
+      await waitForRateLimit(new Date(data.retryAfter))
+      if (cancelRef.current) throw new Error('Отменено')
+      return runWeek(wFrom, wTo)
     }
+    if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`)
+    return { orders: data.orders, sales: data.sales }
+  }
+
+  async function startBackfill() {
+    const from = new Date(backfillFrom)
+    const to   = new Date(backfillTo + 'T23:59:59')
+    if (isNaN(from.getTime()) || isNaN(to.getTime()) || from >= to) return
+
+    const weeks = splitIntoWeeks(from, to)
+    cancelRef.current = false
+    setBackfillRunning(true)
+    setBackfillResults([])
+    setBackfillTotal(weeks.length)
+    setBackfillCurrent(0)
+
+    for (let i = 0; i < weeks.length; i++) {
+      if (cancelRef.current) break
+      setBackfillCurrent(i + 1)
+      const { from: wFrom, to: wTo } = weeks[i]
+      try {
+        const result = await runWeek(wFrom, wTo)
+        setBackfillResults(prev => [...prev, {
+          from: wFrom.toISOString(), to: wTo.toISOString(), ...result,
+        }])
+      } catch (e: any) {
+        setBackfillResults(prev => [...prev, {
+          from: wFrom.toISOString(), to: wTo.toISOString(),
+          orders: 0, sales: 0, error: e.message,
+        }])
+        if (!cancelRef.current) break
+      }
+    }
+
+    setBackfillRunning(false)
+    load()
   }
 
   return (
-    <div className="flex flex-col h-screen overflow-hidden bg-white">
+    <div className="flex flex-col h-[calc(100dvh-8.5rem)] overflow-hidden bg-white md:h-screen">
       <div className="shrink-0 border-b border-gray-100 px-6 py-3 flex items-center gap-3">
         <h1 className="font-semibold text-gray-900 text-sm">Синхронизация</h1>
         <button onClick={load} className="ml-auto text-xs text-gray-400 hover:text-gray-600 px-2 py-1 rounded hover:bg-gray-100">
@@ -105,22 +194,93 @@ export default function SyncPage() {
           </div>
         </div>
 
-        {/* Manual sync */}
-        <div className="space-y-3">
-          <p className="text-xs font-medium text-gray-500">Ручной запуск</p>
+        {/* Backfill */}
+        <div>
+          <p className="text-xs font-medium text-gray-500 mb-2">Восстановление данных</p>
+          <div className="bg-gray-50 rounded-xl px-4 py-4 space-y-3">
+            <div className="flex flex-wrap gap-2 items-end">
+              <div className="flex flex-col gap-1">
+                <label className="text-xs text-gray-400">С</label>
+                <input
+                  type="date"
+                  value={backfillFrom}
+                  onChange={e => setBackfillFrom(e.target.value)}
+                  disabled={backfillRunning}
+                  className="text-xs border border-gray-200 rounded-lg px-2 py-1.5 bg-white disabled:opacity-50"
+                />
+              </div>
+              <div className="flex flex-col gap-1">
+                <label className="text-xs text-gray-400">По</label>
+                <input
+                  type="date"
+                  value={backfillTo}
+                  onChange={e => setBackfillTo(e.target.value)}
+                  disabled={backfillRunning}
+                  className="text-xs border border-gray-200 rounded-lg px-2 py-1.5 bg-white disabled:opacity-50"
+                />
+              </div>
+              <button
+                onClick={() => { setBackfillFrom('2026-04-01'); setBackfillTo('2026-05-24') }}
+                disabled={backfillRunning}
+                className="text-xs px-2 py-1.5 rounded-lg border border-gray-200 bg-white text-gray-500 hover:bg-gray-100 disabled:opacity-50"
+              >
+                Апр–Май 2026
+              </button>
+              <div className="ml-auto flex gap-2">
+                {backfillRunning ? (
+                  <button
+                    onClick={() => { cancelRef.current = true }}
+                    className="text-xs px-3 py-1.5 rounded-lg bg-red-100 text-red-600 hover:bg-red-200"
+                  >
+                    Остановить
+                  </button>
+                ) : (
+                  <button
+                    onClick={startBackfill}
+                    className="text-xs px-3 py-1.5 rounded-lg bg-blue-600 text-white hover:bg-blue-700"
+                  >
+                    Запустить восстановление
+                  </button>
+                )}
+              </div>
+            </div>
 
-          <div className="flex items-center gap-2 flex-wrap">
-            <button onClick={runSync} disabled={syncing}
-              className="px-4 py-2 text-sm font-medium rounded-xl bg-gray-100 hover:bg-gray-200 text-gray-700 disabled:opacity-50 transition-colors">
-              {syncing ? 'Запускается...' : 'Запустить дельта-синк'}
-            </button>
-            <span className="text-xs text-gray-400">заказы и продажи за последний час</span>
-            {syncResult && !syncing && (
-              <span className={`text-xs font-medium px-3 py-1 rounded-full ${
-                syncResult === 'ok' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
-              }`}>
-                {syncResult === 'ok' ? 'Успешно' : `Ошибка: ${syncResult}`}
-              </span>
+            {(backfillRunning || backfillResults.length > 0) && (
+              <div className="space-y-1">
+                {backfillRunning && rateLimitUntil ? (
+                  <p className="text-xs text-amber-600 font-medium">
+                    Лимит API — ждём сброса: {rateLimitSecsLeft} сек
+                    ({rateLimitUntil.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', second: '2-digit' })})
+                  </p>
+                ) : backfillRunning ? (
+                  <p className="text-xs text-gray-500">
+                    Неделя {backfillCurrent} / {backfillTotal}...
+                  </p>
+                ) : null}
+                {backfillResults.map((r, i) => (
+                  <div key={i} className={`flex items-center gap-2 text-xs px-2 py-1 rounded-lg ${r.error ? 'bg-red-50' : 'bg-white'}`}>
+                    <span className={r.error ? 'text-red-500' : 'text-green-600'}>
+                      {r.error ? '✗' : '✓'}
+                    </span>
+                    <span className="text-gray-600 w-24 shrink-0">
+                      {fmtDate(r.from)} — {fmtDate(r.to)}
+                    </span>
+                    {r.error ? (
+                      <span className="text-red-500 truncate">{r.error}</span>
+                    ) : (
+                      <span className="text-gray-400">
+                        заказы: {r.orders}, продажи: {r.sales}
+                      </span>
+                    )}
+                  </div>
+                ))}
+                {!backfillRunning && backfillResults.length > 0 && (
+                  <p className="text-xs text-gray-400 pt-1">
+                    Итого: заказов {backfillResults.reduce((s, r) => s + r.orders, 0)},
+                    продаж {backfillResults.reduce((s, r) => s + r.sales, 0)}
+                  </p>
+                )}
+              </div>
             )}
           </div>
         </div>
@@ -132,11 +292,11 @@ export default function SyncPage() {
             <div className="text-center py-10 text-gray-400 text-sm">Загрузка...</div>
           ) : logs.length === 0 ? (
             <div className="text-center py-10 text-gray-400 text-sm">
-              Синхронизаций ещё не было. Запустите дельта-синк или полный синк выше.
+              Синхронизаций ещё не было.
             </div>
           ) : (
-            <div className="rounded-xl border border-gray-100 overflow-hidden">
-              <table className="w-full text-xs">
+            <div className="rounded-xl border border-gray-100 overflow-x-auto">
+              <table className="w-full min-w-[760px] text-xs">
                 <thead>
                   <tr className="bg-gray-50 text-left">
                     <th className="px-4 py-2.5 font-medium text-gray-500 w-8">#</th>

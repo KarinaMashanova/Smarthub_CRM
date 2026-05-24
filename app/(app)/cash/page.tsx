@@ -182,10 +182,10 @@ export default function CashPage() {
   const endOfDay = new Date().getHours() >= 19
 
   return (
-    <div className="flex flex-col h-full overflow-hidden">
+    <div className="flex flex-col h-[calc(100dvh-8.5rem)] overflow-hidden bg-white md:h-screen">
       {/* Шапка */}
-      <div className="flex-none px-4 py-3 border-b border-gray-100 bg-white flex items-center gap-3 flex-wrap">
-        <span className="text-sm font-semibold text-gray-800">Касса</span>
+      <div className="shrink-0 px-4 py-3 border-b border-gray-100 bg-white flex items-center gap-3 flex-wrap">
+        <span className="text-sm font-semibold text-gray-900">Касса</span>
 
         {endOfDay && (
           <span className="text-xs bg-amber-50 text-amber-700 border border-amber-200 px-2 py-0.5 rounded-full">
@@ -229,7 +229,7 @@ export default function CashPage() {
           )}
 
           <button onClick={() => openAdd()}
-            className="text-xs px-3 py-1.5 rounded-lg bg-blue-600 text-white hover:bg-blue-700 font-medium whitespace-nowrap">
+            className="text-xs px-3 py-1.5 rounded-lg bg-[#FFD600] text-black hover:bg-[#FFCA00] font-medium whitespace-nowrap">
             + Добавить
           </button>
         </div>
@@ -304,7 +304,7 @@ export default function CashPage() {
                 {/* Таблица операций */}
                 {shopEntries.length > 0 && (
                   <div className="border-t border-gray-50 overflow-x-auto">
-                    <table className="w-full text-xs">
+                    <table className="w-full min-w-[760px] text-xs">
                       <thead>
                         <tr className="bg-gray-50 text-gray-400">
                           <th className="text-left px-3 py-2 font-medium w-20">Дата</th>
@@ -401,7 +401,7 @@ export default function CashPage() {
                 <div className="flex gap-2">
                   {(['CASH','CARD','TRANSFER'] as const).map(m => (
                     <button key={m} onClick={() => setPayMethod(m)}
-                      className={`flex-1 py-1.5 rounded-lg text-xs font-medium ${payMethod === m ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600'}`}>
+                      className={`flex-1 py-1.5 rounded-lg text-xs font-medium ${payMethod === m ? 'bg-[#FFD600] text-black' : 'bg-gray-100 text-gray-600'}`}>
                       {PAY_METHODS[m]}
                     </button>
                   ))}
@@ -428,7 +428,7 @@ export default function CashPage() {
               </div>
 
               <button onClick={submitEntry} disabled={saving || !entryType || !amount}
-                className="w-full py-2.5 rounded-xl bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 disabled:opacity-40 transition-colors">
+                className="w-full py-2.5 rounded-xl bg-[#FFD600] text-black text-sm font-medium hover:bg-[#FFCA00] disabled:opacity-40 transition-colors">
                 {saving ? 'Сохраняем...' : 'Добавить'}
               </button>
             </div>

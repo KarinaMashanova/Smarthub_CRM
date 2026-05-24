@@ -2,7 +2,7 @@ import { prisma } from '@/lib/db'
 import { liveskladFetch, fetchAllPages, sleep } from '@/lib/livesklad/client'
 
 const PAYMENT_ORDER = ['Наличные', 'Безнал', 'Счёт']
-const DELTA_LOOKBACK_MS = 60 * 60 * 1000
+const DELTA_LOOKBACK_MS = 4 * 60 * 60 * 1000
 
 function normalizePaymentType(value: string | null) {
   if (!value) return null
@@ -188,6 +188,19 @@ async function syncOrderList(orders: any[]) {
 export async function syncOrdersDelta(shopIds: string[]) {
   const now = Date.now()
   const dateFilter = encodeURIComponent(JSON.stringify([now - DELTA_LOOKBACK_MS, now]))
+
+  let total = 0
+  for (const shopId of shopIds) {
+    const orders = await fetchAllPages<any>(
+      (page) => `/shops/${shopId}/orders?lastAction=${dateFilter}&page=${page}&pageSize=50&sort=lastAction ASC`
+    )
+    total += await syncOrderList(orders)
+  }
+  return total
+}
+
+export async function syncOrdersRange(shopIds: string[], from: Date, to: Date) {
+  const dateFilter = encodeURIComponent(JSON.stringify([from.getTime(), to.getTime()]))
 
   let total = 0
   for (const shopId of shopIds) {

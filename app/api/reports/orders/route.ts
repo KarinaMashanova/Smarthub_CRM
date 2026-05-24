@@ -5,6 +5,7 @@ import { getSession } from '@/lib/auth/session'
 export async function GET(req: NextRequest) {
   const session = await getSession()
   if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (session.role !== 'ADMIN') return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
   const { searchParams } = req.nextUrl
   const now   = new Date()
@@ -13,17 +14,9 @@ export async function GET(req: NextRequest) {
   const from  = new Date(year, month, 1)
   const to    = new Date(year, month + 1, 0, 23, 59, 59)
 
-  const isManager = session.role === 'MANAGER' && !!session.shopId
-  const orderFilter: any = isManager
-    ? { shopId: session.shopId!, OR: [{ managerName: session.name }, { masterName: session.name }] }
-    : {}
-  const salesFilter: any = isManager
-    ? { shopId: session.shopId!, OR: [{ sellerName: session.name }, { sellerName: null }] }
-    : {}
-
   const [orders, sales] = await Promise.all([
     prisma.order.findMany({
-      where: { ...orderFilter, dateClose: { gte: from, lte: to }, isVisible: true, isReturn: false },
+      where: { dateClose: { gte: from, lte: to }, isVisible: true, isReturn: false },
       select: {
         id: true, revenue: true, dateClose: true,
         managerName: true, shopId: true, shop: { select: { name: true } },
@@ -32,7 +25,7 @@ export async function GET(req: NextRequest) {
       },
     }),
     prisma.sale.findMany({
-      where: { ...salesFilter, date: { gte: from, lte: to }, isReturn: false },
+      where: { date: { gte: from, lte: to }, isReturn: false },
       select: { shopId: true, shop: { select: { name: true } }, revenue: true },
     }),
   ])

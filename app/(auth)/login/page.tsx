@@ -104,7 +104,7 @@ export default function LoginPage() {
         return
       }
 
-      router.push(data.role === 'ADMIN' ? '/admin' : '/dashboard')
+      router.push('/orders')
     } catch {
       setError('Ошибка соединения')
       setLoading(false)

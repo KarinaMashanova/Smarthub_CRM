@@ -14,7 +14,7 @@ export async function GET(req: NextRequest) {
     ? new Date(searchParams.get('to')!)
     : new Date(new Date().setHours(23, 59, 59, 999))
 
-  const isManager = session.role === 'MANAGER' && !!session.shopId
+const isManager = session.role === 'MANAGER' && !!session.shopId
   const shopFilter: any = isManager ? { shopId: session.shopId } : {}
 
   const [entries, shops, orderRev, saleRev] = await Promise.all([
@@ -66,6 +66,23 @@ export async function POST(req: NextRequest) {
   if (!amount || amount <= 0) return NextResponse.json({ error: 'Invalid amount' }, { status: 400 })
   if (!body.type)      return NextResponse.json({ error: 'Missing type' }, { status: 400 })
   if (!body.payMethod) return NextResponse.json({ error: 'Missing payMethod' }, { status: 400 })
+
+  const adminIncomeTypes = ['Прочий доход', 'Возврат от поставщика']
+  const adminExpenseTypes = [
+    'Реклама', 'Интернет / Видеонаблюдение', 'Закупка товаров',
+    'Займы и кредиты', 'Аренда', 'Комиссия банка / Эквайринг',
+    'Ремонт и обслуживание', 'Транспортные расходы',
+    'Штрафы / Налоги', 'Выплата зарплаты', 'Прочий расход',
+  ]
+  const managerIncomeTypes = ['Внесение в кассу']
+  const managerExpenseTypes = ['Расход из кассы', 'Инкассация', 'Выплата зарплаты', 'Прочий расход']
+  const allowedTypes = session.role === 'ADMIN'
+    ? (body.isIncome ? adminIncomeTypes : adminExpenseTypes)
+    : (body.isIncome ? managerIncomeTypes : managerExpenseTypes)
+
+  if (!allowedTypes.includes(body.type)) {
+    return NextResponse.json({ error: 'Forbidden operation type' }, { status: 403 })
+  }
 
   const shopId = session.role === 'MANAGER' ? (session.shopId ?? '') : (body.shopId ?? '')
   if (!shopId) return NextResponse.json({ error: 'Missing shopId' }, { status: 400 })

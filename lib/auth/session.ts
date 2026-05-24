@@ -1,5 +1,6 @@
 import { SignJWT, jwtVerify } from 'jose'
 import { cookies } from 'next/headers'
+import { prisma } from '@/lib/db'
 
 const SECRET = new TextEncoder().encode(process.env.JWT_SECRET ?? 'smarthub-dev-secret-change-in-prod')
 const COOKIE = 'smarthub_session'
@@ -33,7 +34,18 @@ export async function getSession(): Promise<SessionPayload | null> {
     const token = store.get(COOKIE)?.value
     if (!token) return null
     const { payload } = await jwtVerify(token, SECRET)
-    return payload as unknown as SessionPayload
+    const session = payload as unknown as SessionPayload
+    const employee = await prisma.employee.findUnique({
+      where: { id: session.employeeId },
+      select: { id: true, name: true, appRole: true, shopId: true },
+    })
+    if (!employee?.appRole) return null
+    return {
+      employeeId: employee.id,
+      name: employee.name,
+      role: employee.appRole,
+      shopId: employee.shopId,
+    }
   } catch {
     return null
   }

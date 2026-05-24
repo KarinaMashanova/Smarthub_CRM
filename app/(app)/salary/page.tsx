@@ -291,15 +291,15 @@ export default function SalaryPage() {
       {view === 'stats' && (
         <>
           <button onClick={() => { setStatsMonth(null); setStatsFrom(todayISO); setStatsTo(todayISO) }}
-            className={`px-2 py-1 rounded-lg text-xs font-medium transition-colors ${isToday ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}>
+            className={`px-2 py-1 rounded-lg text-xs font-medium transition-colors ${isToday ? 'bg-[#FFD600] text-black' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}>
             Сегодня
           </button>
           <button onClick={() => { setStatsMonth(null); setStatsFrom(yesterdayISO); setStatsTo(yesterdayISO) }}
-            className={`px-2 py-1 rounded-lg text-xs font-medium transition-colors ${isYesterday ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}>
+            className={`px-2 py-1 rounded-lg text-xs font-medium transition-colors ${isYesterday ? 'bg-[#FFD600] text-black' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}>
             Вчера
           </button>
           <button onClick={() => { setStatsMonth(null); setStatsFrom(toISO(new Date(statsYear, 0, 1))); setStatsTo(toISO(new Date(statsYear, 11, 31))) }}
-            className={`px-2 py-1 rounded-lg text-xs font-medium transition-colors ${isFullYear ? 'bg-gray-800 text-white' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}>
+            className={`px-2 py-1 rounded-lg text-xs font-medium transition-colors ${isFullYear ? 'bg-[#FFD600] text-black' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}>
             Весь год
           </button>
         </>
@@ -317,7 +317,7 @@ export default function SalaryPage() {
   )
 
   return (
-    <div className="flex flex-col h-screen overflow-hidden bg-white">
+    <div className="flex flex-col h-[calc(100dvh-8.5rem)] overflow-hidden bg-white md:h-screen">
       {/* Top bar */}
       <div className="shrink-0 border-b border-gray-100">
         <div className="px-4 pt-2.5 pb-1.5 flex items-center gap-2 flex-wrap">
@@ -340,7 +340,7 @@ export default function SalaryPage() {
               {[2026, 2027].map(y => (
                 <button key={y} onClick={() => setYear(y)}
                   className={`px-2 py-1 rounded-lg text-xs font-medium transition-colors ${
-                    year === y ? 'bg-gray-800 text-white' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                    year === y ? 'bg-[#FFD600] text-black' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
                   }`}>{y}</button>
               ))}
             </div>
@@ -350,7 +350,7 @@ export default function SalaryPage() {
               {[2026, 2027].map(y => (
                 <button key={y} onClick={() => selectStatsYear(y)}
                   className={`px-2 py-1 rounded-lg text-xs font-medium transition-colors ${
-                    statsYear === y ? 'bg-gray-800 text-white' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                    statsYear === y ? 'bg-[#FFD600] text-black' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
                   }`}>{y}</button>
               ))}
             </div>
@@ -396,7 +396,7 @@ export default function SalaryPage() {
           )}
           {view === 'stats' && (
             <button onClick={loadStats}
-              className="px-3 py-1 text-xs font-medium rounded-lg bg-gray-800 text-white hover:bg-gray-700 transition-colors">
+              className="px-3 py-1 text-xs font-medium rounded-lg bg-[#FFD600] text-black hover:bg-[#FFCA00] transition-colors">
               Применить
             </button>
           )}
@@ -640,7 +640,7 @@ export default function SalaryPage() {
           repairs.length === 0 ? (
             <div className="text-center py-20 text-gray-400 text-sm">Нет ремонтов за выбранный период</div>
           ) : (
-            <table className="w-full text-xs border-collapse">
+            <table className="w-full min-w-[880px] text-xs border-collapse">
               <thead className="sticky top-0 z-10">
                 <tr className="bg-gray-50 border-b border-gray-200 text-left">
                   <th className="px-3 py-2.5 font-medium text-gray-500 w-[100px]">Дата начисл.</th>
@@ -727,7 +727,7 @@ export default function SalaryPage() {
           stats.length === 0 ? (
             <div className="text-center py-20 text-gray-400 text-sm">Нет данных за выбранный период</div>
           ) : (
-            <table className="w-full text-xs border-collapse">
+            <table className="w-full min-w-[880px] text-xs border-collapse">
               <thead className="sticky top-0 z-10">
                 <tr className="bg-gray-50 border-b border-gray-200 text-left">
                   <th className="px-3 py-2.5 font-medium text-gray-500">Сотрудник</th>
@@ -778,7 +778,7 @@ export default function SalaryPage() {
                       {expanded && (
                         <tr className="border-b border-gray-100 bg-gray-50/50">
                           <td colSpan={10} className="px-6 py-2.5">
-                            <table className="w-full text-[11px]">
+                            <table className="w-full min-w-[620px] text-[11px]">
                               <thead>
                                 <tr className="text-gray-400 border-b border-gray-200">
                                   <th className="text-left pb-1.5 font-medium">Тип</th>
@@ -843,7 +843,7 @@ export default function SalaryPage() {
               {filterVmr ? 'Нет ВМР-заказов за выбранный период' : 'Нет данных за выбранный период'}
             </div>
           ) : (
-            <table className="w-full text-xs border-collapse">
+            <table className="w-full min-w-[760px] text-xs border-collapse">
               <thead className="sticky top-0 z-10">
                 <tr className="bg-gray-50 border-b border-gray-200 text-left">
                   <th className="px-3 py-2.5 font-medium text-gray-500 w-[100px]">Дата начисл.</th>

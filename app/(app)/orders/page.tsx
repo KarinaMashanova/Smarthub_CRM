@@ -252,11 +252,11 @@ export default function OrdersPage() {
   const highMarginCnt = summary?.highMargin ?? orders.filter(o => o.isHighMargin).length
 
   return (
-    <div className="flex flex-col h-screen overflow-hidden bg-white">
+    <div className="flex flex-col h-[calc(100dvh-8.5rem)] overflow-hidden bg-white md:h-screen">
 
       {/* Top bar */}
       <div className="shrink-0 border-b border-gray-100 px-4 pt-2.5 pb-2">
-        <div className="flex items-center gap-2 pb-2">
+        <div className="flex items-center gap-2 pb-2 flex-wrap">
           <h1 className="font-semibold text-gray-900 text-sm shrink-0">Заказы</h1>
 
           <div className="flex gap-0.5 bg-gray-100 rounded-lg p-0.5">
@@ -272,7 +272,7 @@ export default function OrdersPage() {
 
           <input value={search} onChange={e => setSearch(e.target.value)}
             placeholder="Номер, мастер, салон..."
-            className="ml-auto px-2.5 py-1 text-xs rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#FFD600] w-56"/>
+            className="order-last w-full px-2.5 py-1 text-xs rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#FFD600] md:order-none md:ml-auto md:w-56"/>
 
           {loading && <span className="text-xs text-gray-400 shrink-0">Загрузка...</span>}
 
@@ -408,7 +408,7 @@ export default function OrdersPage() {
             )}
           </div>
         ) : (
-          <table className="w-full text-xs border-collapse">
+          <table className="w-full min-w-[1080px] text-xs border-collapse">
             <thead className="sticky top-0 z-10">
               <tr className="bg-gray-50 border-b border-gray-200 text-left">
                 <th className="px-2 py-2.5 font-medium text-gray-500 w-6"></th>
@@ -582,7 +582,7 @@ export default function OrdersPage() {
                             <p className="text-xs text-gray-400">Позиции не загружены</p>
                           ) : (
                             <div className="max-w-xl">
-                              <table className="w-full text-xs mb-2">
+                              <table className="w-full min-w-[620px] text-xs mb-2">
                                 <thead>
                                   <tr className="text-gray-400 border-b border-gray-200">
                                     <th className="text-left py-1 font-medium">Позиция</th>

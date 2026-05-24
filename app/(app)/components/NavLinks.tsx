@@ -2,13 +2,13 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
+import { useEffect, useRef } from 'react'
 
 interface NavItem { href: string; label: string; icon: string }
 
 function NavIcon({ name }: { name: string }) {
   const cls = 'w-5 h-5'
   switch (name) {
-    case 'dashboard': return <svg className={cls} viewBox="0 0 20 20" fill="none"><rect x="2" y="2" width="7" height="7" rx="1.5" stroke="currentColor" strokeWidth="1.5"/><rect x="2" y="11" width="7" height="7" rx="1.5" stroke="currentColor" strokeWidth="1.5"/><rect x="11" y="2" width="7" height="7" rx="1.5" stroke="currentColor" strokeWidth="1.5"/><rect x="11" y="11" width="7" height="7" rx="1.5" stroke="currentColor" strokeWidth="1.5"/></svg>
     case 'orders': return <svg className={cls} viewBox="0 0 20 20" fill="none"><path d="M4 3h12a1 1 0 011 1v12a1 1 0 01-1 1H4a1 1 0 01-1-1V4a1 1 0 011-1z" stroke="currentColor" strokeWidth="1.5"/><path d="M7 7h6M7 10h6M7 13h4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
     case 'sales': return <svg className={cls} viewBox="0 0 20 20" fill="none"><path d="M3 10h14M10 3v14" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/><circle cx="10" cy="10" r="7" stroke="currentColor" strokeWidth="1.5"/></svg>
     case 'cash': return <svg className={cls} viewBox="0 0 20 20" fill="none"><rect x="2" y="5" width="16" height="11" rx="2" stroke="currentColor" strokeWidth="1.5"/><path d="M2 8h16" stroke="currentColor" strokeWidth="1.5"/><circle cx="6" cy="12" r="1" fill="currentColor"/></svg>
@@ -25,16 +25,36 @@ function NavIcon({ name }: { name: string }) {
 
 export function NavLinks({ items }: { items: NavItem[] }) {
   const pathname = usePathname()
+  const navRef = useRef<HTMLElement | null>(null)
+  const activeRef = useRef<HTMLAnchorElement | null>(null)
+
+  useEffect(() => {
+    const nav = navRef.current
+    const active = activeRef.current
+    if (!nav || !active) return
+    const left = active.offsetLeft - nav.clientWidth / 2 + active.clientWidth / 2
+    const scroll = () => {
+      nav.scrollLeft = Math.max(0, left)
+    }
+    scroll()
+    const raf = requestAnimationFrame(scroll)
+    const timer = window.setTimeout(scroll, 100)
+    return () => {
+      cancelAnimationFrame(raf)
+      window.clearTimeout(timer)
+    }
+  }, [pathname])
 
   return (
-    <nav className="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto">
+    <nav ref={navRef} className="flex h-full gap-1 overflow-x-auto px-2 py-2 md:block md:h-auto md:flex-1 md:space-y-0.5 md:overflow-y-auto md:overflow-x-hidden md:px-3 md:py-4">
       {items.map(item => {
         const active = pathname === item.href
         return (
           <Link
             key={item.href}
             href={item.href}
-            className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm transition-colors group ${
+            ref={active ? activeRef : undefined}
+            className={`flex min-w-[72px] flex-col items-center justify-center gap-1 rounded-xl px-2 py-2 text-center text-[10px] leading-tight transition-colors group md:min-w-0 md:flex-row md:justify-start md:gap-3 md:px-3 md:py-2.5 md:text-left md:text-sm ${
               active
                 ? 'bg-[#FFD600] text-black font-medium'
                 : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
@@ -43,7 +63,7 @@ export function NavLinks({ items }: { items: NavItem[] }) {
             <span className={`transition-colors ${active ? 'text-black' : 'text-gray-400 group-hover:text-gray-600'}`}>
               <NavIcon name={item.icon} />
             </span>
-            {item.label}
+            <span className="max-w-[68px] truncate md:max-w-none">{item.label}</span>
           </Link>
         )
       })}

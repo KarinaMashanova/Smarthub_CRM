@@ -61,8 +61,18 @@ export async function POST(req: NextRequest) {
   let shopId: string | null = session.shopId ?? null
   let orderNumber: string | null = null
   if (orderId) {
-    const order = await prisma.order.findUnique({ where: { id: orderId }, select: { shopId: true, number: true } })
+    const order = await prisma.order.findUnique({
+      where: { id: orderId },
+      select: { shopId: true, number: true, managerName: true, masterName: true },
+    })
     if (!order) return NextResponse.json({ error: 'order not found' }, { status: 404 })
+    if (
+      session.role === 'MANAGER' &&
+      order.managerName !== session.name &&
+      order.masterName !== session.name
+    ) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    }
     shopId      = order.shopId
     orderNumber = order.number
   }

@@ -241,7 +241,7 @@ export default function SchedulePage() {
     : empList.slice(0,8)
 
   return (
-    <div className="flex flex-col h-screen overflow-hidden bg-white">
+    <div className="flex flex-col h-[calc(100dvh-8.5rem)] overflow-hidden bg-white md:h-screen">
 
       {/* Top bar */}
       <div className="shrink-0 border-b border-gray-100 px-4 py-2.5 flex items-center gap-3 flex-wrap">
@@ -354,7 +354,7 @@ export default function SchedulePage() {
       {/* GRID */}
       {tab === 'grid' && (
         <div className="flex-1 overflow-auto">
-          <table className="w-full text-xs border-collapse" style={{tableLayout:'fixed'}}>
+          <table className="w-full min-w-[680px] text-xs border-collapse" style={{tableLayout:'fixed'}}>
             <colgroup>
               <col style={{width:'200px', minWidth:'200px'}}/>
               {weekDays.map((_,i) => <col key={i}/>)}
@@ -609,7 +609,7 @@ export default function SchedulePage() {
 
                   {/* Table */}
                   <div className="rounded-xl border border-gray-200 overflow-hidden">
-                    <table className="w-full text-xs">
+                    <table className="w-full min-w-[680px] text-xs">
                       <thead>
                         <tr className="bg-gray-50 border-b border-gray-200 text-left">
                           <th className="px-4 py-2.5 font-medium text-gray-500">Сотрудник</th>
@@ -667,12 +667,14 @@ export default function SchedulePage() {
                                           <span>{fmtD(p.from)} — {fmtD(p.to)}</span>
                                           <span className="text-[10px] opacity-60">({p.days} дн.)</span>
                                           <span className="opacity-50 text-[10px]">{LEAVE_LABELS[p.leaveType]}</span>
-                                          <button
-                                            onClick={() => deletePeriod(s.name, p.from.slice(0,10), p.to.slice(0,10))}
-                                            disabled={leaveDeleting}
-                                            className="ml-0.5 opacity-40 hover:opacity-100 transition-opacity text-sm leading-none disabled:opacity-20">
-                                            ×
-                                          </button>
+                                          {isAdmin && (
+                                            <button
+                                              onClick={() => deletePeriod(s.name, p.from.slice(0,10), p.to.slice(0,10))}
+                                              disabled={leaveDeleting}
+                                              className="ml-0.5 opacity-40 hover:opacity-100 transition-opacity text-sm leading-none disabled:opacity-20">
+                                              ×
+                                            </button>
+                                          )}
                                         </div>
                                       ))}
                                     </div>

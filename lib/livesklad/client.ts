@@ -2,6 +2,13 @@ const BASE_URL = process.env.LIVESKLAD_BASE_URL!
 const LOGIN    = process.env.LIVESKLAD_LOGIN!
 const PASSWORD = process.env.LIVESKLAD_PASSWORD!
 
+export class RateLimitError extends Error {
+  constructor(public resetAt: Date, path: string) {
+    super(`LiveSklad rate limit on ${path}, resets at ${resetAt.toISOString()}`)
+    this.name = 'RateLimitError'
+  }
+}
+
 let cachedToken: string | null = null
 let tokenExpiresAt: number = 0
 
@@ -19,8 +26,8 @@ export async function getToken(): Promise<string> {
 
     if (res.status === 429) {
       const expireHeader = res.headers.get('x-ratelimit-reset')
-      const resetAt = expireHeader ? new Date(expireHeader).getTime() : Date.now() + 15 * 60 * 1000
-      throw new Error(`LiveSklad auth rate limit until ${new Date(resetAt).toISOString()}`)
+      const resetAt = new Date(expireHeader ? expireHeader : Date.now() + 15 * 60 * 1000)
+      throw new RateLimitError(resetAt, '/auth')
     }
 
     if (!res.ok) throw new Error(`LiveSklad auth failed: ${res.status}`)
@@ -42,10 +49,8 @@ export async function liveskladFetch(path: string, retries = 3): Promise<any> {
 
   if (res.status === 429) {
     const expireHeader = res.headers.get('x-ratelimit-reset')
-    const resetAt = expireHeader
-      ? new Date(expireHeader).getTime()
-      : Date.now() + 15 * 60 * 1000
-    throw new Error(`LiveSklad rate limit on ${path} until ${new Date(resetAt).toISOString()}`)
+    const resetAt = new Date(expireHeader ? expireHeader : Date.now() + 15 * 60 * 1000)
+    throw new RateLimitError(resetAt, path)
   }
 
   if (res.status === 401) {

@@ -99,14 +99,14 @@ export default function ReportsPage() {
     Math.max(m, ...shop.days.map(d => pivotMetric === 'revenue' ? d.revenue : d.margin)), 0)
 
   return (
-    <div className="flex flex-col h-full overflow-hidden">
+    <div className="flex flex-col h-[calc(100dvh-8.5rem)] overflow-hidden bg-white md:h-screen">
       {/* Шапка */}
-      <div className="flex-none flex items-center gap-3 px-4 py-3 border-b border-gray-100 bg-white flex-wrap">
-        <span className="text-sm font-medium text-gray-700">Отчёт по заказам</span>
+      <div className="shrink-0 flex items-center gap-3 px-4 py-3 border-b border-gray-100 bg-white flex-wrap">
+        <span className="text-sm font-semibold text-gray-900">Отчёты</span>
         <div className="flex items-center gap-1 ml-auto">
           {AVAILABLE_YEARS.map(y => (
             <button key={y} onClick={() => setYear(y)}
-              className={`px-3 py-1 rounded text-sm ${year === y ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
+              className={`px-3 py-1 rounded-lg text-sm font-medium ${year === y ? 'bg-[#FFD600] text-black' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
               {y}
             </button>
           ))}
@@ -114,7 +114,7 @@ export default function ReportsPage() {
         <div className="flex items-center gap-1">
           {MONTH_SHORT.map((m, i) => (
             <button key={i} onClick={() => setMonth(i)}
-              className={`px-2 py-1 rounded text-xs ${month === i ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}>
+              className={`px-2 py-1 rounded-lg text-xs font-medium ${month === i ? 'bg-[#FFD600] text-black' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}>
               {m}
             </button>
           ))}
@@ -142,7 +142,7 @@ export default function ReportsPage() {
           <div className="flex gap-2">
             {(['chart','table'] as const).map(t => (
               <button key={t} onClick={() => setMainTab(t)}
-                className={`px-4 py-1.5 rounded text-sm font-medium ${mainTab === t ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
+                className={`px-4 py-1.5 rounded-lg text-sm font-medium ${mainTab === t ? 'bg-[#FFD600] text-black' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
                 {t === 'chart' ? 'Дашборд' : 'Таблица'}
               </button>
             ))}
@@ -159,7 +159,7 @@ export default function ReportsPage() {
                   <div className="flex gap-1">
                     {(['revenue','margin'] as const).map(m => (
                       <button key={m} onClick={() => setChartMetric(m)}
-                        className={`px-3 py-1 rounded text-xs ${chartMetric === m ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}>
+                        className={`px-3 py-1 rounded-lg text-xs font-medium ${chartMetric === m ? 'bg-[#FFD600] text-black' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}>
                         {m === 'revenue' ? 'Выручка' : 'Маржа'}
                       </button>
                     ))}
@@ -189,14 +189,14 @@ export default function ReportsPage() {
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
 
                 {/* Блок: Заказы по магазинам */}
-                <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
+                <div className="bg-white rounded-xl border border-gray-100 overflow-x-auto">
                   <div className="px-4 py-3 border-b border-gray-50 flex items-center justify-between">
                     <span className="text-sm font-medium text-gray-700">Заказы по магазинам</span>
                     <span className="text-xs text-blue-500 font-medium">
                       {byShopSummary.reduce((s, r) => s + r.orders.count, 0)} заказов
                     </span>
                   </div>
-                  <table className="w-full text-xs">
+                  <table className="w-full min-w-[520px] text-xs">
                     <thead>
                       <tr className="bg-gray-50 text-gray-500">
                         <th className="text-left px-3 py-2 font-medium">Магазин</th>
@@ -233,14 +233,14 @@ export default function ReportsPage() {
                 </div>
 
                 {/* Блок: Продажи по магазинам */}
-                <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
+                <div className="bg-white rounded-xl border border-gray-100 overflow-x-auto">
                   <div className="px-4 py-3 border-b border-gray-50 flex items-center justify-between">
                     <span className="text-sm font-medium text-gray-700">Продажи по магазинам</span>
                     <span className="text-xs text-violet-500 font-medium">
                       {byShopSummary.reduce((s, r) => s + r.sales.count, 0)} продаж
                     </span>
                   </div>
-                  <table className="w-full text-xs">
+                  <table className="w-full min-w-[520px] text-xs">
                     <thead>
                       <tr className="bg-gray-50 text-gray-500">
                         <th className="text-left px-3 py-2 font-medium">Магазин</th>
@@ -288,7 +288,7 @@ export default function ReportsPage() {
                     <span className="text-sm font-medium text-gray-700">Топ менеджеров</span>
                   </div>
                   <div className="overflow-x-auto">
-                    <table className="w-full text-xs">
+                    <table className="w-full min-w-[760px] text-xs">
                       <thead>
                         <tr className="bg-gray-50 text-gray-500">
                           <th className="text-left px-3 py-2 font-medium">Менеджер</th>

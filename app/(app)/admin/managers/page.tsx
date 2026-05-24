@@ -54,14 +54,14 @@ export default function EmployeesPage() {
   const others = filtered.filter(e => e.appRole === null)
 
   return (
-    <div className="flex flex-col h-screen overflow-hidden bg-white">
-      <div className="shrink-0 border-b border-gray-100 px-6 py-3 flex items-center gap-3">
+    <div className="flex flex-col h-[calc(100dvh-8.5rem)] overflow-hidden bg-white md:h-screen">
+      <div className="shrink-0 border-b border-gray-100 px-4 py-3 flex items-center gap-3 flex-wrap md:px-6">
         <h1 className="font-semibold text-gray-900 text-sm">Сотрудники</h1>
         <input
           value={search}
           onChange={e => setSearch(e.target.value)}
           placeholder="Поиск по имени или магазину..."
-          className="ml-auto px-3 py-1.5 text-xs rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#FFD600] w-56"
+          className="w-full px-3 py-1.5 text-xs rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#FFD600] md:ml-auto md:w-56"
         />
       </div>
 
@@ -80,8 +80,8 @@ export default function EmployeesPage() {
               Нет пользователей с доступом
             </div>
           ) : (
-            <div className="rounded-xl border border-gray-100 overflow-hidden">
-              <table className="w-full text-sm">
+            <div className="rounded-xl border border-gray-100 overflow-x-auto">
+              <table className="w-full min-w-[620px] text-sm">
                 <thead>
                   <tr className="bg-gray-50 text-left">
                     <th className="px-4 py-2.5 text-xs font-medium text-gray-500">Сотрудник</th>
@@ -154,8 +154,8 @@ export default function EmployeesPage() {
             <p className="text-xs font-medium text-gray-500 mb-2">
               Без доступа — можно выдать{` — ${others.length}`}
             </p>
-            <div className="rounded-xl border border-gray-100 overflow-hidden">
-              <table className="w-full text-sm">
+            <div className="rounded-xl border border-gray-100 overflow-x-auto">
+              <table className="w-full min-w-[620px] text-sm">
                 <thead>
                   <tr className="bg-gray-50 text-left">
                     <th className="px-4 py-2.5 text-xs font-medium text-gray-500">Сотрудник</th>

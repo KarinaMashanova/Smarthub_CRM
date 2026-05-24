@@ -12,6 +12,7 @@ export async function POST(req: Request) {
 
   const employee = await prisma.employee.findUnique({ where: { id: String(employeeId) } })
   if (!employee) return NextResponse.json({ error: 'Не найден' }, { status: 404 })
+  if (!employee.appRole) return NextResponse.json({ error: 'Нет доступа' }, { status: 403 })
   if (employee.isPasswordSet) return NextResponse.json({ error: 'Пароль уже установлен' }, { status: 400 })
 
   const passwordHash = await bcrypt.hash(password, 10)

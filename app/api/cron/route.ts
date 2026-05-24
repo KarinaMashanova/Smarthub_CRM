@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { runDeltaSync } from '@/lib/sync'
 
-// Вызывается каждые 15 минут через Vercel Cron или внешний cron
+// Вызывается каждые 15 минут через GitHub Actions.
 export async function GET(request: Request) {
   const authHeader = request.headers.get('authorization')
   if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {

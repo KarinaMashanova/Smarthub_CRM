@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, Fragment } from 'react'
 
 interface SalePosition {
   id: string; name: string; isWork: boolean
@@ -165,14 +165,14 @@ export default function SalesPage() {
   }
 
   return (
-    <div className="flex flex-col h-screen overflow-hidden bg-white">
+    <div className="flex flex-col h-[calc(100dvh-8.5rem)] overflow-hidden bg-white md:h-screen">
       <div className="shrink-0 border-b border-gray-100 px-4 pt-2.5 pb-2">
-        <div className="flex items-center gap-2 pb-2">
+        <div className="flex items-center gap-2 pb-2 flex-wrap">
           <h1 className="font-semibold text-gray-900 text-sm shrink-0">Продажи</h1>
 
           <input value={search} onChange={e => { setSearch(e.target.value); setPage(1) }}
             placeholder="Номер, продавец..."
-            className="ml-auto px-2.5 py-1 text-xs rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#FFD600] w-56"/>
+            className="order-last w-full px-2.5 py-1 text-xs rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#FFD600] md:order-none md:ml-auto md:w-56"/>
 
           {loading && <span className="text-xs text-gray-400 shrink-0">Загрузка...</span>}
         </div>
@@ -285,7 +285,7 @@ export default function SalesPage() {
         ) : sales.length === 0 ? (
           <div className="flex items-center justify-center h-40 text-gray-400 text-sm">Продаж за период не найдено</div>
         ) : (
-          <table className="w-full text-xs">
+          <table className="w-full min-w-[860px] text-xs">
             <thead className="sticky top-0 bg-gray-50 z-10">
               <tr className="text-gray-400 text-left">
                 <th className="px-4 py-2.5 font-medium w-16">Дата</th>
@@ -305,8 +305,8 @@ export default function SalesPage() {
                 const costTotal = s.costTotal ?? s.positions.reduce((sum, p) => sum + p.purchasePriceSumm, 0)
                 const margin    = s.margin
                 return (
-                  <>
-                    <tr key={s.id}
+                  <Fragment key={s.id}>
+                    <tr
                       onClick={() => s.positions.length > 0 && toggleExpand(s.id)}
                       className={`border-b border-gray-50 hover:bg-gray-50 transition-colors ${s.positions.length > 0 ? 'cursor-pointer' : ''}`}>
                       <td className="px-4 py-2.5 text-gray-400">{fmtDate(s.date)}</td>
@@ -346,7 +346,7 @@ export default function SalesPage() {
                     {isOpen && (
                       <tr key={`${s.id}-detail`} className="bg-blue-50/30">
                         <td colSpan={isAdmin ? 9 : 8} className="px-6 py-3">
-                          <table className="w-full text-xs">
+                          <table className="w-full min-w-[620px] text-xs">
                             <thead>
                               <tr className="text-gray-400">
                                 <th className="text-left py-1 font-medium">Наименование</th>
@@ -394,7 +394,7 @@ export default function SalesPage() {
                         </td>
                       </tr>
                     )}
-                  </>
+                  </Fragment>
                 )
               })}
             </tbody>

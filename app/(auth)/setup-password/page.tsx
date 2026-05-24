@@ -46,7 +46,7 @@ function SetupPasswordForm() {
       if (data.role === 'ADMIN') {
         router.push('/admin')
       } else {
-        router.push('/dashboard')
+        router.push('/orders')
       }
     } catch {
       setError('Ошибка соединения')

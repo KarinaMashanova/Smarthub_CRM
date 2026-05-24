@@ -4,7 +4,7 @@ import { getSession } from '@/lib/auth/session'
 
 export async function GET(req: NextRequest) {
   const session = await getSession()
-  if (!session || session.role !== 'ADMIN') return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const { searchParams } = req.nextUrl
   const employeeName = searchParams.get('employee')
@@ -12,7 +12,11 @@ export async function GET(req: NextRequest) {
   const to   = searchParams.get('to')
 
   const where: any = {}
-  if (employeeName) where.employeeName = employeeName
+  if (session.role === 'MANAGER') {
+    where.employeeName = session.name
+  } else if (employeeName) {
+    where.employeeName = employeeName
+  }
   if (from || to) where.date = { ...(from ? { gte: new Date(from) } : {}), ...(to ? { lte: new Date(to) } : {}) }
 
   const records = await prisma.employeeLeave.findMany({

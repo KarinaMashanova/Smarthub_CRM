@@ -1,8 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
+import { getSession } from '@/lib/auth/session'
 
 // GET /api/schedule?from=2026-05-05&to=2026-05-11
 export async function GET(req: NextRequest) {
+  const session = await getSession()
+  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
   const { searchParams } = req.nextUrl
   const from = new Date(searchParams.get('from') ?? new Date())
   const to   = new Date(searchParams.get('to')   ?? new Date())
@@ -27,7 +31,11 @@ export async function GET(req: NextRequest) {
     leaveMap.set(`${l.employeeName}__${l.date.toISOString().slice(0, 10)}`, l.leaveType)
   }
 
-  const result = slots.map(s => ({
+  const visibleSlots = session.role === 'MANAGER'
+    ? slots.filter(s => s.employeeName === session.name)
+    : slots
+
+  const result = visibleSlots.map(s => ({
     ...s,
     leaveType: s.employeeName
       ? (leaveMap.get(`${s.employeeName}__${s.date.toISOString().slice(0, 10)}`) ?? null)
