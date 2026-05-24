@@ -35,17 +35,8 @@ export async function getSession(): Promise<SessionPayload | null> {
     if (!token) return null
     const { payload } = await jwtVerify(token, SECRET)
     const session = payload as unknown as SessionPayload
-    const employee = await prisma.employee.findUnique({
-      where: { id: session.employeeId },
-      select: { id: true, name: true, appRole: true, shopId: true },
-    })
-    if (!employee?.appRole) return null
-    return {
-      employeeId: employee.id,
-      name: employee.name,
-      role: employee.appRole,
-      shopId: employee.shopId,
-    }
+    if (!session.employeeId || !session.role) return null
+    return session
   } catch {
     return null
   }
