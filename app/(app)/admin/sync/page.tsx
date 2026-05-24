@@ -31,6 +31,8 @@ interface WeekResult {
 const ENTITY_LABELS: Record<string, string> = {
   shops:            'Магазины',
   employees:        'Сотрудники',
+  shops_directory_backfill:     'Магазины (сверка)',
+  employees_directory_backfill: 'Сотрудники (сверка)',
   orders_delta:     'Заказы (дельта)',
   sales_delta:      'Продажи (дельта)',
   orders_backfill:  'Заказы (бэкфилл)',
@@ -85,6 +87,9 @@ export default function SyncPage() {
   const [backfillCurrent, setBackfillCurrent] = useState(0)
   const [rateLimitUntil,  setRateLimitUntil]  = useState<Date | null>(null)
   const [rateLimitSecsLeft, setRateLimitSecsLeft] = useState(0)
+  const [directoryRunning, setDirectoryRunning] = useState(false)
+  const [directoryResult, setDirectoryResult] = useState<{ shops: number; employees: number } | null>(null)
+  const [directoryError, setDirectoryError] = useState('')
   const cancelRef = useRef(false)
 
   const load = useCallback(() => {
@@ -168,6 +173,28 @@ export default function SyncPage() {
     load()
   }
 
+  async function startDirectoryBackfill() {
+    setDirectoryRunning(true)
+    setDirectoryResult(null)
+    setDirectoryError('')
+    try {
+      const res = await fetch('/api/admin/directory-backfill', { method: 'POST' })
+      const data = await res.json()
+      if (!res.ok) {
+        if (res.status === 429 && data.retryAfter) {
+          throw new Error(`Лимит API до ${new Date(data.retryAfter).toLocaleTimeString('ru-RU')}`)
+        }
+        throw new Error(data.error ?? `HTTP ${res.status}`)
+      }
+      setDirectoryResult({ shops: data.shops ?? 0, employees: data.employees ?? 0 })
+      load()
+    } catch (e: any) {
+      setDirectoryError(e.message ?? 'Ошибка сверки')
+    } finally {
+      setDirectoryRunning(false)
+    }
+  }
+
   return (
     <div className="flex flex-col h-[calc(100dvh-8.5rem)] overflow-hidden bg-white md:h-screen">
       <div className="shrink-0 border-b border-gray-100 px-6 py-3 flex items-center gap-3">
@@ -191,6 +218,34 @@ export default function SyncPage() {
                 <p className="text-xs text-gray-400 mt-0.5">{label}</p>
               </div>
             ))}
+          </div>
+        </div>
+
+        {/* Directory backfill */}
+        <div>
+          <p className="text-xs font-medium text-gray-500 mb-2">Салоны и сотрудники</p>
+          <div className="bg-gray-50 rounded-xl px-4 py-4">
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-gray-900">Сверить справочники LiveSklad</p>
+                <p className="text-xs text-gray-400 mt-0.5">
+                  Добавит новые салоны и сотрудников, существующие записи обновит по имени и роли.
+                </p>
+              </div>
+              <button
+                onClick={startDirectoryBackfill}
+                disabled={directoryRunning}
+                className="ml-auto text-xs px-3 py-1.5 rounded-lg bg-gray-900 text-white hover:bg-gray-800 disabled:opacity-50"
+              >
+                {directoryRunning ? 'Сверяем...' : 'Сверить и добавить'}
+              </button>
+            </div>
+
+            {(directoryResult || directoryError) && (
+              <div className={`mt-3 text-xs rounded-lg px-3 py-2 ${directoryError ? 'bg-red-50 text-red-600' : 'bg-white text-gray-500'}`}>
+                {directoryError || `Салоны: ${directoryResult?.shops ?? 0}, сотрудники: ${directoryResult?.employees ?? 0}`}
+              </div>
+            )}
           </div>
         </div>
 

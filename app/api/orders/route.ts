@@ -39,6 +39,7 @@ export async function GET(req: NextRequest) {
   const positionMode = searchParams.get('positionMode') ?? 'all'
   const returnMode = searchParams.get('returnMode') ?? 'all'
   const visibility = searchParams.get('visibility') ?? 'visible'
+  const workFeeMode = searchParams.get('workFeeMode') ?? 'all'
 
   const now = new Date()
   const defaultFrom = new Date(now.getFullYear(), now.getMonth(), 1)
@@ -147,6 +148,9 @@ export async function GET(req: NextRequest) {
     if (marginMode === 'exclude') return !o.isHighMargin
     if (positionMode === 'without') return o.margin === null && !o.isReturn && o.isVisible
     if (positionMode === 'with') return o.margin !== null
+    if (workFeeMode === 'available') {
+      return Boolean(o.managerName && o.masterName && o.managerName === o.masterName && o.isHighMargin && o.isVisible && !o.isReturn)
+    }
     return true
   })
   const summary = filteredOrders.reduce((acc, o) => {

@@ -119,6 +119,7 @@ export default function OrdersPage() {
   const [positionMode, setPositionMode] = useState<'all' | 'with' | 'without'>('all')
   const [returnMode, setReturnMode] = useState<'all' | 'only' | 'exclude'>('all')
   const [visibility, setVisibility] = useState<'all' | 'visible' | 'hidden'>('visible')
+  const [workFeeMode, setWorkFeeMode] = useState<'all' | 'available'>('all')
 
   // Детали строк
   const [expanded, setExpanded]         = useState<Set<string>>(new Set())
@@ -161,6 +162,7 @@ export default function OrdersPage() {
     p.set('positionMode', positionMode)
     p.set('returnMode', returnMode)
     p.set('visibility', visibility)
+    p.set('workFeeMode', workFeeMode)
     fetch(`/api/orders?${p}`)
       .then(r => r.json())
       .then(d => {
@@ -176,9 +178,9 @@ export default function OrdersPage() {
         setLoading(false)
       })
       .catch(() => setLoading(false))
-  }, [from, to, page, search, status, shopId, manager, master, paymentType, marginMode, positionMode, returnMode, visibility])
+  }, [from, to, page, search, status, shopId, manager, master, paymentType, marginMode, positionMode, returnMode, visibility, workFeeMode])
 
-  useEffect(() => { setPage(1); setExpanded(new Set()) }, [from, to, search, status, shopId, manager, master, paymentType, marginMode, positionMode, returnMode, visibility])
+  useEffect(() => { setPage(1); setExpanded(new Set()) }, [from, to, search, status, shopId, manager, master, paymentType, marginMode, positionMode, returnMode, visibility, workFeeMode])
   useEffect(() => { load() }, [load])
 
   function toggleRow(id: string) {
@@ -331,7 +333,7 @@ export default function OrdersPage() {
         </div>
 
         {/* Ряд 3: фильтры */}
-        <div className="bg-gray-50 rounded-lg px-2 py-1.5 space-y-1.5">
+        <div className="bg-gray-50 rounded-lg px-2 py-1.5">
           <div className="flex items-center gap-1.5 flex-wrap">
             <select value={marginMode} onChange={e => setMarginMode(e.target.value as 'all' | 'only' | 'exclude')}
               className="h-7 px-2 text-xs rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#FFD600] max-w-[120px]">
@@ -361,9 +363,14 @@ export default function OrdersPage() {
               <option value="all">Активные и удалённые</option>
             </select>
 
-            <button onClick={resetFilters} disabled={!hasExtraFilters}
-              className="ml-auto h-7 px-2.5 text-xs rounded-lg bg-white border border-gray-200 text-gray-500 hover:bg-gray-100 disabled:opacity-40 disabled:hover:bg-white transition-colors">
-              Сбросить
+            <button
+              onClick={() => setWorkFeeMode(m => m === 'available' ? 'all' : 'available')}
+              className={`h-7 px-2.5 text-xs rounded-lg border transition-colors ${
+                workFeeMode === 'available'
+                  ? 'bg-gray-700 border-gray-700 text-white'
+                  : 'border-gray-200 bg-white text-gray-500 hover:bg-gray-100'
+              }`}>
+              ЗП день в день
             </button>
           </div>
         </div>
@@ -627,7 +634,7 @@ export default function OrdersPage() {
                                 </span>
                               ) : (
                                 <>
-                                  <span className="text-[10px] font-medium text-purple-700 bg-purple-50 border border-purple-100 rounded-full px-2 py-1">
+                                  <span className="text-[10px] font-medium text-gray-700 bg-gray-100 border border-gray-200 rounded-full px-2 py-1">
                                     Вы можете забрать ЗП за работу день в день
                                   </span>
                                   <span className="text-xs text-gray-500 shrink-0">Оплата за работу:</span>
@@ -635,7 +642,7 @@ export default function OrdersPage() {
                                     type="date"
                                     value={workFeeDate[o.id] ?? todayISO}
                                     onChange={e => setWorkFeeDate(prev => ({ ...prev, [o.id]: e.target.value }))}
-                                    className="px-2 py-1 border border-gray-200 rounded text-xs focus:outline-none focus:ring-1 focus:ring-purple-300"
+                                    className="px-2 py-1 border border-gray-200 rounded text-xs focus:outline-none focus:ring-1 focus:ring-gray-300"
                                   />
                                   <input
                                     type="number"
@@ -644,13 +651,13 @@ export default function OrdersPage() {
                                     value={workFeeInput[o.id] ?? ''}
                                     onChange={e => setWorkFeeInput(prev => ({ ...prev, [o.id]: e.target.value }))}
                                     onKeyDown={e => e.key === 'Enter' && addWorkFee(o.id)}
-                                    className="w-28 px-2 py-1 border border-gray-200 rounded text-xs focus:outline-none focus:ring-1 focus:ring-purple-300"
+                                    className="w-28 px-2 py-1 border border-gray-200 rounded text-xs focus:outline-none focus:ring-1 focus:ring-gray-300"
                                   />
                                   <span className="text-xs text-gray-400">₽</span>
                                   <button
                                     onClick={() => addWorkFee(o.id)}
                                     disabled={workFeeLoading.has(o.id) || !workFeeInput[o.id]}
-                                    className="px-3 py-1 bg-purple-600 text-white rounded text-xs font-medium hover:bg-purple-700 disabled:opacity-40 transition-colors">
+                                    className="px-3 py-1 bg-gray-700 text-white rounded text-xs font-medium hover:bg-gray-800 disabled:opacity-40 transition-colors">
                                     {workFeeLoading.has(o.id) ? '...' : 'Добавить'}
                                   </button>
                                 </>

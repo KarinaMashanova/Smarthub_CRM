@@ -36,7 +36,7 @@ function buildSaleRow(data: any, shopId: string) {
     shopId:      data.shop?.id   ?? shopId,
     date:        data.date       ? new Date(data.date)       : null,
     dateChange:  data.dateChange ? new Date(data.dateChange) : null,
-    sellerName:  data.responsible?.name ?? data.createdBy?.name ?? null,
+    sellerName:  data.responsible?.name ?? data.employee?.name ?? data.customer?.name ?? data.createdBy?.name ?? null,
     cashMoney,
     cashBank,
     cashInvoice,
