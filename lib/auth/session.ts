@@ -1,6 +1,5 @@
 import { SignJWT, jwtVerify } from 'jose'
 import { cookies } from 'next/headers'
-import { prisma } from '@/lib/db'
 
 const SECRET = new TextEncoder().encode(process.env.JWT_SECRET ?? 'smarthub-dev-secret-change-in-prod')
 const COOKIE = 'smarthub_session'
