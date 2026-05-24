@@ -16,11 +16,18 @@ export async function syncEmployees(shopIds: string[]) {
   let count = 0
 
   for (const shopId of shopIds) {
-    const [allData, mastersData, managersData] = await Promise.all([
-      fetchAllPages<any>((page) => `/shops/${shopId}/customers?page=${page}&pageSize=100`, 100),
-      fetchAllPages<any>((page) => `/shops/${shopId}/customers/masters?page=${page}&pageSize=100`, 100),
-      fetchAllPages<any>((page) => `/shops/${shopId}/customers/managers?page=${page}&pageSize=100`, 100),
-    ])
+    const allData = await fetchAllPages<any>(
+      (page) => `/shops/${shopId}/customers?page=${page}&pageSize=100`,
+      100,
+    )
+    const mastersData = await fetchAllPages<any>(
+      (page) => `/shops/${shopId}/customers/masters?page=${page}&pageSize=100`,
+      100,
+    )
+    const managersData = await fetchAllPages<any>(
+      (page) => `/shops/${shopId}/customers/managers?page=${page}&pageSize=100`,
+      100,
+    )
 
     const masterIds  = new Set(mastersData.map((e: any) => e.id))
     const managerIds = new Set(managersData.map((e: any) => e.id))
