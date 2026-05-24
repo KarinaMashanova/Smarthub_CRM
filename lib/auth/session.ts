@@ -2,7 +2,7 @@ import { SignJWT, jwtVerify } from 'jose'
 import { cookies } from 'next/headers'
 
 const SECRET = new TextEncoder().encode(process.env.JWT_SECRET || 'smarthub-dev-secret-change-in-prod')
-const COOKIE = 'smarthub_session'
+export const SESSION_COOKIE_NAME = 'smarthub_session'
 
 export interface SessionPayload {
   employeeId: string
@@ -12,7 +12,7 @@ export interface SessionPayload {
 }
 
 export const SESSION_COOKIE_OPTIONS = {
-  name: COOKIE,
+  name: SESSION_COOKIE_NAME,
   httpOnly: true,
   secure: process.env.NODE_ENV === 'production',
   sameSite: 'lax' as const,
@@ -30,7 +30,7 @@ export async function createSession(payload: SessionPayload): Promise<string> {
 export async function getSession(): Promise<SessionPayload | null> {
   try {
     const store = await cookies()
-    const token = store.get(COOKIE)?.value
+    const token = store.get(SESSION_COOKIE_NAME)?.value
     if (!token) return null
     const { payload } = await jwtVerify(token, SECRET)
     const session = payload as unknown as SessionPayload
@@ -43,5 +43,5 @@ export async function getSession(): Promise<SessionPayload | null> {
 
 export async function deleteSession() {
   const store = await cookies()
-  store.delete(COOKIE)
+  store.delete(SESSION_COOKIE_NAME)
 }
