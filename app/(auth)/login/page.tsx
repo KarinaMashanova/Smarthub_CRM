@@ -104,7 +104,7 @@ export default function LoginPage() {
         return
       }
 
-      router.push('/orders')
+      window.location.href = '/orders'
     } catch {
       setError('Ошибка соединения')
       setLoading(false)
