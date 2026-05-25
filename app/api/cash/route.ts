@@ -2,6 +2,31 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { getSession } from '@/lib/auth/session'
 
+type ShopFilter = { shopId?: string | { in: string[] } }
+
+async function getManagerScheduleShopIds(employeeName: string, from: Date, to: Date) {
+  const [shops, slots] = await Promise.all([
+    prisma.shop.findMany({ where: { isVisible: true }, select: { id: true, name: true }, orderBy: { name: 'asc' } }),
+    prisma.scheduleSlot.findMany({
+      where: {
+        employeeName,
+        date: { gte: from, lte: to },
+        NOT: { location: { contains: '(2)' } },
+      },
+      select: { location: true },
+      distinct: ['location'],
+      orderBy: { location: 'asc' },
+    }),
+  ])
+
+  const shopByName = new Map(shops.map(shop => [shop.name, shop]))
+  const scheduledShops = slots
+    .map(slot => shopByName.get(slot.location))
+    .filter((shop): shop is { id: string; name: string } => Boolean(shop))
+
+  return { shops, scheduledShops }
+}
+
 export async function GET(req: NextRequest) {
   const session = await getSession()
   if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -14,16 +39,19 @@ export async function GET(req: NextRequest) {
     ? new Date(searchParams.get('to')!)
     : new Date(new Date().setHours(23, 59, 59, 999))
 
-const isManager = session.role === 'MANAGER' && !!session.shopId
-  const shopFilter: any = isManager ? { shopId: session.shopId } : {}
+  const isManager = session.role === 'MANAGER'
+  const { shops: allShops, scheduledShops } = isManager
+    ? await getManagerScheduleShopIds(session.name, from, to)
+    : { shops: await prisma.shop.findMany({ where: { isVisible: true }, select: { id: true, name: true }, orderBy: { name: 'asc' } }), scheduledShops: [] }
+  const managerShopIds = scheduledShops.map(shop => shop.id)
+  const shopFilter: ShopFilter = isManager ? { shopId: { in: managerShopIds } } : {}
 
-  const [entries, allShops, orderRev, saleRev, employees, salaryActions] = await Promise.all([
+  const [entries, orderRev, saleRev, employees, salaryActions] = await Promise.all([
     prisma.cashEntry.findMany({
       where: { ...shopFilter, date: { gte: from, lte: to } },
       include: { shop: { select: { name: true } } },
       orderBy: { date: 'desc' },
     }),
-    prisma.shop.findMany({ where: { isVisible: true }, select: { id: true, name: true }, orderBy: { name: 'asc' } }),
     // Выручка из заказов (по dateClose)
     prisma.order.groupBy({
       by: ['shopId'],
@@ -66,7 +94,7 @@ const isManager = session.role === 'MANAGER' && !!session.shopId
   }
 
   const shopNameMap = new Map(allShops.map(s => [s.id, s.name]))
-  const shops = session.role === 'ADMIN' ? allShops : []
+  const shops = session.role === 'ADMIN' ? allShops : scheduledShops
 
   const roleMap   = new Map(employees.map(e => [e.name, e.appRole]))
   const empShopMap = new Map(employees.map(e => [e.name, e.shopId]))
@@ -82,7 +110,7 @@ const isManager = session.role === 'MANAGER' && !!session.shopId
   const salaryEntries = salaryActions.flatMap(ta => {
     const shopId = ta.shopId ?? empShopMap.get(ta.employeeName) ?? null
     if (!shopId) return []
-    if (isManager && shopId !== session.shopId) return []
+    if (isManager && !managerShopIds.includes(shopId)) return []
     return [{
       id: -(ta.id),
       date: ta.date.toISOString(),
@@ -121,7 +149,19 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Empty type' }, { status: 400 })
   }
 
-  const shopId = session.role === 'MANAGER' ? (session.shopId ?? '') : (body.shopId ?? '')
+  let shopId = body.shopId ?? ''
+  if (session.role === 'MANAGER') {
+    const entryDate = body.date ? new Date(body.date) : new Date()
+    const dayStart = new Date(entryDate)
+    dayStart.setHours(0, 0, 0, 0)
+    const dayEnd = new Date(entryDate)
+    dayEnd.setHours(23, 59, 59, 999)
+    const { scheduledShops } = await getManagerScheduleShopIds(session.name, dayStart, dayEnd)
+    shopId = scheduledShops[0]?.id ?? ''
+    if (!shopId) {
+      return NextResponse.json({ error: 'На эту дату нет смены в графике' }, { status: 400 })
+    }
+  }
   if (!shopId) return NextResponse.json({ error: 'Missing shopId' }, { status: 400 })
 
   let entry
@@ -139,9 +179,9 @@ export async function POST(req: NextRequest) {
       },
       include: { shop: { select: { name: true } } },
     })
-  } catch (e: any) {
+  } catch (e: unknown) {
     console.error('[cash POST]', e)
-    return NextResponse.json({ error: e?.message ?? 'DB error' }, { status: 500 })
+    return NextResponse.json({ error: e instanceof Error ? e.message : 'DB error' }, { status: 500 })
   }
 
   return NextResponse.json(entry, { status: 201 })

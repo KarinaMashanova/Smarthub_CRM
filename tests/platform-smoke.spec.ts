@@ -5,25 +5,19 @@ import pg from 'pg'
 import { SESSION_COOKIE_NAME } from '../lib/auth/session'
 
 type AppRole = 'ADMIN' | 'MANAGER'
+interface TestEmployee {
+  id: string
+  name: string
+  appRole: AppRole
+  shopId: string
+}
 
 const COMMON_PAGES = ['/orders', '/sales', '/cash', '/schedule', '/salary', '/knowledge']
 const ADMIN_PAGES = ['/admin', '/admin/managers', '/admin/sync', '/reports']
 const BASE_URL = process.env.E2E_BASE_URL ?? 'http://127.0.0.1:3000'
 const pool = new pg.Pool({ connectionString: process.env.DIRECT_URL ?? process.env.DATABASE_URL })
 
-async function sessionCookie(role: AppRole) {
-  const { rows } = await pool.query<{
-    id: string
-    name: string
-    appRole: AppRole
-    shopId: string
-  }>(
-    'select id, name, "appRole", "shopId" from "Employee" where "appRole" = $1 and "isPasswordSet" = true order by name asc limit 1',
-    [role],
-  )
-  const employee = rows[0]
-  if (!employee) throw new Error(`No ${role} employee with password found`)
-
+async function buildSessionCookie(employee: TestEmployee) {
   const secret = new TextEncoder().encode(process.env.JWT_SECRET || 'smarthub-dev-secret-change-in-prod')
   const token = await new SignJWT({
       employeeId: employee.id,
@@ -45,8 +39,26 @@ async function sessionCookie(role: AppRole) {
   }
 }
 
+async function getEmployeeByRole(role: AppRole) {
+  const { rows } = await pool.query<TestEmployee>(
+    'select id, name, "appRole", "shopId" from "Employee" where "appRole" = $1 and "isPasswordSet" = true order by name asc limit 1',
+    [role],
+  )
+  const employee = rows[0]
+  if (!employee) throw new Error(`No ${role} employee with password found`)
+  return employee
+}
+
+async function sessionCookie(role: AppRole) {
+  return buildSessionCookie(await getEmployeeByRole(role))
+}
+
 async function loginAs(context: BrowserContext, role: AppRole) {
   await context.addCookies([await sessionCookie(role)])
+}
+
+async function loginEmployee(context: BrowserContext, employee: TestEmployee) {
+  await context.addCookies([await buildSessionCookie(employee)])
 }
 
 async function expectHealthyPage(page: import('@playwright/test').Page, path: string) {
@@ -119,6 +131,34 @@ test.describe('manager mode', () => {
   test('does not expose admin reports api', async ({ page }) => {
     const res = await page.request.get('/api/reports/orders?from=2026-05-01&to=2026-05-25')
     expect(res.status()).toBe(403)
+  })
+
+  test('cash shops come from schedule', async ({ context, page }) => {
+    const { rows } = await pool.query<TestEmployee & { location: string }>(
+      `select e.id, e.name, e."appRole", e."shopId", s.location
+       from "ScheduleSlot" s
+       join "Shop" sh on sh.name = s.location
+       join "Employee" e on e.name = s."employeeName"
+       where e."appRole" = 'MANAGER'
+         and s.date >= $1::date
+         and s.date <= $2::date
+       order by s.date asc, e.name asc
+       limit 1`,
+      ['2026-05-01', '2026-05-25'],
+    )
+    const employee = rows[0]
+    if (!employee) {
+      test.skip(true, 'no scheduled manager found')
+      return
+    }
+
+    await context.clearCookies()
+    await loginEmployee(context, employee)
+
+    const res = await page.request.get('/api/cash?from=2026-05-01&to=2026-05-25T23:59:59')
+    expect(res.status()).toBe(200)
+    const data = await res.json()
+    expect(data.shops.map((shop: { name: string }) => shop.name)).toContain(employee.location)
   })
 })
 

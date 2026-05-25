@@ -7,7 +7,7 @@ const HELP_ITEMS = [
   { label: 'Назначение', desc: 'Раздел фиксирует ручные доходы и расходы по каждому салону. Выручка из заказов и продаж подтягивается автоматически.' },
   { label: 'Период', desc: 'Выбери Сегодня, Вчера, конкретный Месяц или произвольный Период. Администратор может фильтровать по салону.' },
   { label: 'Операции', desc: 'Типы операций зависят от роли и направления (приход/расход). Если нужного типа нет в списке — выбери «Другое…» и введи свой.' },
-  { label: 'Роли', desc: 'Администратор добавляет записи для любого салона. Менеджер — только в свой салон и с ограниченным набором типов.' },
+  { label: 'Роли', desc: 'Администратор добавляет записи для любого салона. Менеджер — только в салон своей смены по графику.' },
   { label: 'Метод оплаты', desc: 'Наличные / Терминал / Перевод. Влияет только на отображение, не на расчёт итогов.' },
   { label: 'Результат', desc: 'Итог = Заказы + Продажи + ручные приходы − ручные расходы. Отображается по каждому салону и суммарно сверху.' },
 ]
@@ -56,7 +56,7 @@ export default function CashPage() {
   const [loading, setLoading] = useState(true)
 
   // Дата
-  const now = new Date()
+  const [now] = useState(() => new Date())
   const [periodMode, setPeriodMode] = useState<'month' | 'today' | 'yesterday' | 'custom'>('today')
   const [selYear,    setSelYear]    = useState(() => new Date().getFullYear())
   const [selMonth,   setSelMonth]   = useState(() => new Date().getMonth())
@@ -82,8 +82,8 @@ export default function CashPage() {
   const [showSalary,     setShowSalary]   = useState(true)
   const [collapsedShops, setCollapsedShops] = useState<Set<string>>(new Set())
 
-  const todayISO     = toISO(new Date())
-  const yesterdayISO = toISO(new Date(Date.now() - 86400000))
+  const todayISO     = toISO(now)
+  const yesterdayISO = toISO(new Date(now.getTime() - 86400000))
   const monthFrom    = toISO(new Date(selYear, selMonth, 1))
   const monthTo      = toISO(new Date(selYear, selMonth + 1, 0))
   const from = periodMode === 'today'     ? todayISO
@@ -114,6 +114,7 @@ export default function CashPage() {
     }
   }, [from, to])
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { load() }, [load])
 
   const isAdmin = session?.role === 'ADMIN'
@@ -134,7 +135,7 @@ export default function CashPage() {
   // Все салоны с данными, отсортированные по списку магазинов
   const allShopIds = useMemo(() => {
     const ids = new Set([...Object.keys(byShop), ...Object.keys(revenue)])
-    if (!isAdmin && session?.shopId) ids.add(session.shopId)
+    if (!isAdmin) shops.forEach(shop => ids.add(shop.id))
     const order = shops.map(s => s.id)
     return [...ids].sort((a, b) => {
       const ai = order.indexOf(a); const bi = order.indexOf(b)
@@ -142,7 +143,7 @@ export default function CashPage() {
       if (ai === -1) return 1; if (bi === -1) return -1
       return ai - bi
     })
-  }, [byShop, revenue, shops, isAdmin, session])
+  }, [byShop, revenue, shops, isAdmin])
 
   const visibleShopIds = useMemo(
     () => filterShopId ? [filterShopId] : allShopIds,
@@ -175,7 +176,7 @@ export default function CashPage() {
     setAddError('')
     setSaving(true)
     try {
-      const sid = isAdmin ? modalShopId : (session?.shopId ?? '')
+      const sid = isAdmin ? modalShopId : ''
       const res = await fetch('/api/cash', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -188,7 +189,7 @@ export default function CashPage() {
         const body = await res.json().catch(() => ({}))
         setAddError(body.error ?? `Ошибка ${res.status}`)
       }
-    } catch (e) {
+    } catch {
       setAddError('Нет соединения')
     } finally { setSaving(false) }
   }
@@ -205,7 +206,7 @@ export default function CashPage() {
     setEntryDate(toISO(new Date())); setShowAdd(true)
   }
 
-  const endOfDay = new Date().getHours() >= 19
+  const endOfDay = now.getHours() >= 19
 
   return (
     <div className="flex flex-col h-[calc(100dvh-7rem)] overflow-hidden bg-white md:h-screen">
@@ -324,7 +325,10 @@ export default function CashPage() {
             const shopNet       = shopRevTotal + shopIncManual - shopExpenses
             const isCollapsed   = collapsedShops.has(sid)
             const toggleCollapse = () => setCollapsedShops(prev => {
-              const next = new Set(prev); next.has(sid) ? next.delete(sid) : next.add(sid); return next
+              const next = new Set(prev)
+              if (next.has(sid)) next.delete(sid)
+              else next.add(sid)
+              return next
             })
 
             // Расходы по категориям
