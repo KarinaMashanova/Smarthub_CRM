@@ -125,13 +125,15 @@ export async function GET(req: NextRequest) {
   const byShop = Object.values(shopMap).sort((a, b) => b.revenue - a.revenue)
 
   // По магазинам (продажи)
-  const salesMap: Record<string, { count: number; revenue: number }> = {}
+  const salesMap: Record<string, { count: number; revenue: number; margin: number }> = {}
   const productGroupMap: Record<string, { name: string; count: number; revenue: number; margin: number }> = {}
   for (const s of sales) {
     const n = s.shop.name
-    if (!salesMap[n]) salesMap[n] = { count: 0, revenue: 0 }
+    if (!salesMap[n]) salesMap[n] = { count: 0, revenue: 0, margin: 0 }
     salesMap[n].count   += 1
     salesMap[n].revenue += s.revenue
+    const saleMargin = s.positions.reduce((acc, p) => acc + (p.soldPrice * p.count - p.purchasePriceSumm), 0)
+    salesMap[n].margin  += saleMargin
 
     for (const p of s.positions) {
       if (p.isWork) continue
@@ -148,11 +150,11 @@ export async function GET(req: NextRequest) {
   const allShopNames = new Set([...byShop.map(s => s.name), ...Object.keys(salesMap)])
   const byShopSummary = Array.from(allShopNames).map(name => {
     const ord = shopMap[name]  ?? { count: 0, revenue: 0, margin: 0 }
-    const sal = salesMap[name] ?? { count: 0, revenue: 0 }
+    const sal = salesMap[name] ?? { count: 0, revenue: 0, margin: 0 }
     return {
       name,
       orders:     { count: ord.count, revenue: ord.revenue, margin: ord.margin },
-      sales:      { count: sal.count, revenue: sal.revenue },
+      sales:      { count: sal.count, revenue: sal.revenue, margin: sal.margin },
       totalRev:   ord.revenue + sal.revenue,
     }
   }).sort((a, b) => b.totalRev - a.totalRev)

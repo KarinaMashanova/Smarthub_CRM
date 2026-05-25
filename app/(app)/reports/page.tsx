@@ -26,7 +26,7 @@ interface ShopRow    { name: string; count: number; revenue: number; margin: num
 interface ShopSummaryRow {
   name: string
   orders: { count: number; revenue: number; margin: number }
-  sales:  { count: number; revenue: number }
+  sales:  { count: number; revenue: number; margin: number }
   totalRev: number
 }
 interface TypeRow    { name: string; revenue: number }
@@ -295,6 +295,7 @@ export default function ReportsPage() {
                           {shopView !== 'sales'  && <th className="text-right px-3 py-2 font-medium">Маржа</th>}
                           {shopView !== 'orders' && <th className="text-right px-3 py-2 font-medium">Продаж</th>}
                           {shopView !== 'orders' && <th className="text-right px-3 py-2 font-medium">Выр. продажи</th>}
+                          {shopView !== 'orders' && <th className="text-right px-3 py-2 font-medium">Маржа прод.</th>}
                           {shopView === 'combined' && <th className="text-right px-3 py-2 font-medium bg-gray-50/80">Итого</th>}
                         </tr>
                       </thead>
@@ -307,6 +308,7 @@ export default function ReportsPage() {
                             {shopView !== 'sales'  && <td className="px-3 py-1.5 text-right text-amber-600">{s.orders.margin > 0 ? fmt(s.orders.margin) : '—'}</td>}
                             {shopView !== 'orders' && <td className="px-3 py-1.5 text-right text-gray-500">{s.sales.count}</td>}
                             {shopView !== 'orders' && <td className="px-3 py-1.5 text-right text-blue-500">{s.sales.revenue > 0 ? fmt(s.sales.revenue) : '—'}</td>}
+                            {shopView !== 'orders' && <td className="px-3 py-1.5 text-right text-amber-500">{s.sales.margin > 0 ? fmt(s.sales.margin) : '—'}</td>}
                             {shopView === 'combined' && <td className="px-3 py-1.5 text-right font-semibold text-gray-800">{fmt(s.totalRev)}</td>}
                           </tr>
                         ))}
@@ -319,6 +321,7 @@ export default function ReportsPage() {
                           {shopView !== 'sales'  && <td className="px-3 py-1.5 text-right text-amber-600">{fmt(byShopSummary.reduce((s,r)=>s+r.orders.margin,0))}</td>}
                           {shopView !== 'orders' && <td className="px-3 py-1.5 text-right text-gray-500">{byShopSummary.reduce((s,r)=>s+r.sales.count,0)}</td>}
                           {shopView !== 'orders' && <td className="px-3 py-1.5 text-right text-blue-500">{fmt(salesTotal)}</td>}
+                          {shopView !== 'orders' && <td className="px-3 py-1.5 text-right text-amber-500">{fmt(byShopSummary.reduce((s,r)=>s+r.sales.margin,0))}</td>}
                           {shopView === 'combined' && <td className="px-3 py-1.5 text-right text-gray-800">{fmt(combinedTotal)}</td>}
                         </tr>
                       </tfoot>
