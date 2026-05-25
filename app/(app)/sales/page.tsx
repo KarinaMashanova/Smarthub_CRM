@@ -181,7 +181,7 @@ export default function SalesPage() {
   const avgCheck = summary.count > 0 ? Math.round(summary.revenue / summary.count) : 0
 
   return (
-    <div className="flex flex-col h-[calc(100dvh-8.5rem)] overflow-hidden bg-white md:h-screen">
+    <div className="flex flex-col h-[calc(100dvh-7rem)] overflow-hidden bg-white md:h-screen">
 
       {/* Top bar */}
       <div className="shrink-0 border-b border-gray-100 px-4 pt-2.5 pb-2">
@@ -289,7 +289,7 @@ export default function SalesPage() {
       {/* Статистика */}
       {view === 'stats' && (
         <div className="shrink-0 border-b border-gray-100 px-4 py-3 bg-gray-50">
-          <div className="grid grid-cols-4 xl:grid-cols-8 gap-2">
+          <div className="grid grid-cols-2 sm:grid-cols-4 xl:grid-cols-8 gap-2">
             {[
               { label: 'Продаж',      value: String(summary.count),               color: 'text-gray-800' },
               { label: 'Выручка',     value: fmtMoney(summary.revenue),           color: 'text-green-700' },

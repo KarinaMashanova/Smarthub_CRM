@@ -46,7 +46,7 @@ export function NavLinks({ items }: { items: NavItem[] }) {
   }, [pathname])
 
   return (
-    <nav ref={navRef} className="flex h-full gap-1 overflow-x-auto px-2 py-2 md:block md:h-auto md:flex-1 md:space-y-0.5 md:overflow-y-auto md:overflow-x-hidden md:px-3 md:py-4">
+    <nav ref={navRef} className="flex h-full items-center gap-1 overflow-x-auto px-3 py-1.5 md:block md:h-auto md:flex-1 md:space-y-0.5 md:overflow-y-auto md:overflow-x-hidden md:px-3 md:py-4">
       {items.map(item => {
         const active = pathname === item.href
         return (
@@ -54,7 +54,7 @@ export function NavLinks({ items }: { items: NavItem[] }) {
             key={item.href}
             href={item.href}
             ref={active ? activeRef : undefined}
-            className={`flex min-w-[72px] flex-col items-center justify-center gap-1 rounded-xl px-2 py-2 text-center text-[10px] leading-tight transition-colors group md:min-w-0 md:flex-row md:justify-start md:gap-3 md:px-3 md:py-2.5 md:text-left md:text-sm ${
+            className={`flex h-10 min-w-max items-center justify-center gap-1.5 rounded-xl px-3 py-2 text-center text-[11px] leading-tight transition-colors group md:h-auto md:min-w-0 md:flex-row md:justify-start md:gap-3 md:px-3 md:py-2.5 md:text-left md:text-sm ${
               active
                 ? 'bg-[#FFD600] text-black font-medium'
                 : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
@@ -63,7 +63,7 @@ export function NavLinks({ items }: { items: NavItem[] }) {
             <span className={`transition-colors ${active ? 'text-black' : 'text-gray-400 group-hover:text-gray-600'}`}>
               <NavIcon name={item.icon} />
             </span>
-            <span className="max-w-[68px] truncate md:max-w-none">{item.label}</span>
+            <span className="whitespace-nowrap md:whitespace-normal">{item.label}</span>
           </Link>
         )
       })}

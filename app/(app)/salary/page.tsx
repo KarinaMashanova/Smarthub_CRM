@@ -273,11 +273,11 @@ export default function SalaryPage() {
 
 
   return (
-    <div className="flex flex-col h-[calc(100dvh-8.5rem)] overflow-hidden bg-white md:h-screen">
+    <div className="flex flex-col h-[calc(100dvh-7rem)] overflow-hidden bg-white md:h-screen">
       {/* Шапка */}
       <div className="shrink-0 border-b border-gray-100 px-4 pt-2.5 pb-2">
         {/* Строка 1: заголовок + вкладки + действия */}
-        <div className="flex items-center gap-2 pb-2">
+        <div className="flex items-center gap-2 pb-2 flex-wrap">
           <h1 className="font-semibold text-gray-900 text-sm shrink-0">ЗП и бонусы</h1>
           <div className="flex gap-0.5 bg-gray-100 rounded-lg p-0.5">
             {(['list', 'stats', 'repairs'] as const).map(v => (
@@ -289,7 +289,7 @@ export default function SalaryPage() {
               </button>
             ))}
           </div>
-          <div className="ml-auto flex items-center gap-2">
+          <div className="flex w-full items-center justify-end gap-2 md:ml-auto md:w-auto">
             {isAdmin && view === 'list' && (
               <button onClick={() => { setForm(makeEmpty()); setShowModal(true) }}
                 className="h-7 px-3 text-xs rounded-lg bg-[#FFD600] text-black hover:bg-[#FFCA00] font-medium whitespace-nowrap">

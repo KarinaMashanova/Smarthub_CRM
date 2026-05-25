@@ -280,7 +280,7 @@ export default function SchedulePage() {
     : empList.slice(0,8)
 
   return (
-    <div className="flex flex-col h-[calc(100dvh-8.5rem)] overflow-hidden bg-white md:h-screen">
+    <div className="flex flex-col h-[calc(100dvh-7rem)] overflow-hidden bg-white md:h-screen">
 
       {/* Шапка */}
       <div className="shrink-0 border-b border-gray-100 px-4 pt-2.5 pb-2">
@@ -294,7 +294,7 @@ export default function SchedulePage() {
               </button>
             ))}
           </div>
-          <div className="ml-auto flex items-center gap-2">
+          <div className="flex w-full flex-wrap items-center gap-2 md:ml-auto md:w-auto">
             {tab === 'grid' && isAdmin && (
               <button onClick={() => setShowLeaveForm(v => !v)}
                 className={`h-7 px-2.5 text-xs font-medium rounded-lg border transition-colors ${
@@ -311,11 +311,11 @@ export default function SchedulePage() {
         </div>
 
         {tab === 'grid' && (
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5">
             <button onClick={() => setWeekStart(w => addDays(w,-7))} className="p-1 rounded-lg hover:bg-gray-100 text-gray-400">
               <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M9 11L5 7l4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
             </button>
-            <span className="text-xs text-gray-500 w-40 text-center font-medium">
+            <span className="text-xs text-gray-500 min-w-40 text-center font-medium">
               {weekDays[0].getDate()} {MONTH_SHORT[weekDays[0].getMonth()]} — {weekDays[6].getDate()} {MONTH_SHORT[weekDays[6].getMonth()]} {weekDays[6].getFullYear()}
             </span>
             <button onClick={() => setWeekStart(w => addDays(w,7))} className="p-1 rounded-lg hover:bg-gray-100 text-gray-400">
@@ -367,7 +367,7 @@ export default function SchedulePage() {
             )}
             {isAdmin && statsView === 'shifts' && (
               <select value={statsLoc} onChange={e => setStatsLoc(e.target.value)}
-                className="ml-auto px-2 h-7 text-xs rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#FFD600]">
+                className="w-full px-2 h-7 text-xs rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#FFD600] md:ml-auto md:w-auto">
                 <option value="">Все салоны</option>
                 {allLocs.filter(l => !l.includes('(2)')).map(l => <option key={l} value={l}>{l}</option>)}
               </select>

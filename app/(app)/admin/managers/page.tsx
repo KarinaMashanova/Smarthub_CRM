@@ -54,7 +54,7 @@ export default function EmployeesPage() {
   const others = filtered.filter(e => e.appRole === null)
 
   return (
-    <div className="flex flex-col h-[calc(100dvh-8.5rem)] overflow-hidden bg-white md:h-screen">
+    <div className="flex flex-col h-[calc(100dvh-7rem)] overflow-hidden bg-white md:h-screen">
       <div className="shrink-0 border-b border-gray-100 px-4 py-3 flex items-center gap-3 flex-wrap md:px-6">
         <h1 className="font-semibold text-gray-900 text-sm">Сотрудники</h1>
         <input
@@ -65,7 +65,7 @@ export default function EmployeesPage() {
         />
       </div>
 
-      <div className="flex-1 overflow-auto px-6 py-5 space-y-6">
+      <div className="flex-1 overflow-auto px-4 py-5 space-y-6 md:px-6">
 
         {/* Users with access */}
         <section>

@@ -197,20 +197,20 @@ export default function SyncPage() {
   }
 
   return (
-    <div className="flex flex-col h-[calc(100dvh-8.5rem)] overflow-hidden bg-white md:h-screen">
-      <div className="shrink-0 border-b border-gray-100 px-6 py-3 flex items-center gap-3">
+    <div className="flex flex-col h-[calc(100dvh-7rem)] overflow-hidden bg-white md:h-screen">
+      <div className="shrink-0 border-b border-gray-100 px-4 py-3 flex items-center gap-3 md:px-6">
         <h1 className="font-semibold text-gray-900 text-sm">Синхронизация</h1>
         <button onClick={load} className="ml-auto text-xs text-gray-400 hover:text-gray-600 px-2 py-1 rounded hover:bg-gray-100">
           Обновить
         </button>
       </div>
 
-      <div className="flex-1 overflow-auto px-6 py-5 space-y-6">
+      <div className="flex-1 overflow-auto px-4 py-5 space-y-6 md:px-6">
 
         {/* DB counts */}
         <div>
           <p className="text-xs font-medium text-gray-500 mb-2">Данные в базе</p>
-          <div className="grid grid-cols-4 gap-2">
+          <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
             {COUNT_LABELS.map(([key, label]) => (
               <div key={key} className="bg-gray-50 rounded-xl px-4 py-3">
                 <p className="text-xl font-bold text-gray-900">

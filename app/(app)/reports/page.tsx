@@ -132,11 +132,11 @@ export default function ReportsPage() {
     Math.max(m, ...shop.days.map(d => pivotMetric === 'revenue' ? d.revenue : d.margin)), 0)
 
   return (
-    <div className="flex flex-col h-[calc(100dvh-8.5rem)] overflow-hidden bg-white md:h-screen">
+    <div className="flex flex-col h-[calc(100dvh-7rem)] overflow-hidden bg-white md:h-screen">
       {/* Шапка */}
       <div className="shrink-0 border-b border-gray-100 px-4 pt-2.5 pb-2">
         {/* Строка 1: заголовок + вкладки + справка */}
-        <div className="flex items-center gap-2 pb-2">
+        <div className="flex items-center gap-2 pb-2 flex-wrap">
           <h1 className="font-semibold text-gray-900 text-sm shrink-0">Отчёты</h1>
           <div className="flex gap-0.5 bg-gray-100 rounded-lg p-0.5">
             {(['chart', 'table'] as const).map(t => (

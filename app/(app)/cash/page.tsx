@@ -208,7 +208,7 @@ export default function CashPage() {
   const endOfDay = new Date().getHours() >= 19
 
   return (
-    <div className="flex flex-col h-[calc(100dvh-8.5rem)] overflow-hidden bg-white md:h-screen">
+    <div className="flex flex-col h-[calc(100dvh-7rem)] overflow-hidden bg-white md:h-screen">
       {/* Шапка */}
       <div className="shrink-0 border-b border-gray-100 px-4 pt-2.5 pb-2">
         <div className="flex items-center gap-2 pb-2 flex-wrap">
@@ -218,10 +218,10 @@ export default function CashPage() {
               Не забудьте сверить кассу
             </span>
           )}
-          <div className="ml-auto flex items-center gap-2">
+          <div className="flex w-full flex-wrap items-center gap-2 md:ml-auto md:w-auto">
             {isAdmin && shops.length > 0 && (
               <select value={filterShopId} onChange={e => setFilterShopId(e.target.value)}
-                className="h-7 px-2 text-xs rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#FFD600]">
+                className="h-7 min-w-0 flex-1 px-2 text-xs rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#FFD600] md:flex-none">
                 <option value="">Все салоны</option>
                 {shops.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
               </select>
@@ -303,7 +303,7 @@ export default function CashPage() {
                 </span>
               </span>
             ) : null)}
-            <span className="ml-auto pl-3 border-l border-gray-200 text-gray-500">
+            <span className="w-full pt-1 text-gray-500 md:ml-auto md:w-auto md:border-l md:border-gray-200 md:pl-3 md:pt-0">
               Прибыль{' '}
               <span className={`font-bold text-sm ${totals.net >= 0 ? 'text-green-600' : 'text-red-500'}`}>
                 {totals.net >= 0 ? '+' : '−'}{fmt(Math.abs(totals.net))}
@@ -353,7 +353,7 @@ export default function CashPage() {
                   {rev.orders > 0 && <span className="text-gray-400">Заказы <span className="font-medium text-green-600">+{fmt(rev.orders)}</span></span>}
                   {rev.sales  > 0 && <span className="text-gray-400">Продажи <span className="font-medium text-green-600">+{fmt(rev.sales)}</span></span>}
                   {shopExpenses > 0 && <span className="text-gray-400">Расходы <span className="font-medium text-red-500">−{fmt(shopExpenses)}</span></span>}
-                  <span className="text-gray-400 ml-auto">Итого <span className={`font-semibold ${shopNet >= 0 ? 'text-green-600' : 'text-red-500'}`}>{shopNet >= 0 ? '+' : '−'}{fmt(Math.abs(shopNet))}</span></span>
+                  <span className="w-full text-gray-400 sm:ml-auto sm:w-auto">Итого <span className={`font-semibold ${shopNet >= 0 ? 'text-green-600' : 'text-red-500'}`}>{shopNet >= 0 ? '+' : '−'}{fmt(Math.abs(shopNet))}</span></span>
                 </div>
 
                 {/* Расходы по категориям */}

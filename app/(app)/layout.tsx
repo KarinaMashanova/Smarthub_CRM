@@ -53,7 +53,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
       </header>
 
       {/* Sidebar */}
-      <aside className="fixed bottom-0 inset-x-0 z-40 h-20 bg-white border-t border-gray-100 flex flex-col md:static md:inset-auto md:z-auto md:h-auto md:w-56 md:shrink-0 md:border-t-0 md:border-r">
+      <aside className="fixed top-14 inset-x-0 z-40 h-14 bg-white border-b border-gray-100 flex flex-col md:static md:inset-auto md:z-auto md:h-auto md:w-56 md:shrink-0 md:border-b-0 md:border-r">
         {/* Logo */}
         <div className="hidden md:block px-5 py-5 border-b border-gray-100">
           <div className="flex items-center gap-2.5">
@@ -87,7 +87,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
       </aside>
 
       {/* Content */}
-      <main className="flex-1 overflow-auto min-w-0 pt-14 pb-20 md:pt-0 md:pb-0">
+      <main className="flex-1 overflow-auto min-w-0 pt-28 md:pt-0">
         {children}
       </main>
     </div>
