@@ -36,7 +36,8 @@ export async function getSession(): Promise<SessionPayload | null> {
     const session = payload as unknown as SessionPayload
     if (!session.employeeId || !session.role) return null
     return session
-  } catch {
+  } catch (err) {
+    console.error('[getSession] JWT verification failed:', err)
     return null
   }
 }
