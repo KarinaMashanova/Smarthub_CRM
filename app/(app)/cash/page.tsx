@@ -9,7 +9,7 @@ const HELP_ITEMS = [
   { label: 'Операции', desc: 'Типы операций зависят от роли и направления (приход/расход). Если нужного типа нет в списке — выбери «Другое…» и введи свой.' },
   { label: 'Роли', desc: 'Администратор добавляет записи для любого салона. Менеджер — только в салон своей смены по графику.' },
   { label: 'Метод оплаты', desc: 'Наличные / Терминал / Перевод. Влияет только на отображение, не на расчёт итогов.' },
-  { label: 'Результат', desc: 'Итог = Заказы + Продажи + ручные приходы − ручные расходы. Отображается по каждому салону и суммарно сверху.' },
+  { label: 'Результат', desc: 'Итог = Заказы + Продажи наличными + Продажи безналом + Счета + ручные приходы − ручные расходы.' },
 ]
 
 interface Session { name: string; role: 'MANAGER' | 'ADMIN'; shopId: string | null }
@@ -21,7 +21,13 @@ interface CashEntry {
   shopId: string; shop: { name: string }
   source?: 'MANUAL' | 'SALARY'
 }
-type Revenue = Record<string, { orders: number; sales: number }>
+type Revenue = Record<string, {
+  orders: number
+  salesCash: number
+  salesBank: number
+  salesInvoice: number
+  salesTotal: number
+}>
 
 const PAY_METHODS = { CASH: 'Наличные', CARD: 'Терминал', TRANSFER: 'Перевод' }
 const MONTHS = ['Январь','Февраль','Март','Апрель','Май','Июнь','Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь']
@@ -152,10 +158,15 @@ export default function CashPage() {
 
   // Общие итоги
   const totals = useMemo(() => {
-    let revOrders = 0, revSales = 0, expenses = 0, incManual = 0, salaryPaid = 0, fines = 0
+    let revOrders = 0, revSalesCash = 0, revSalesBank = 0, revSalesInvoice = 0, expenses = 0, incManual = 0, salaryPaid = 0, fines = 0
     for (const sid of visibleShopIds) {
       const rev = revenue[sid]
-      if (rev) { revOrders += rev.orders; revSales += rev.sales }
+      if (rev) {
+        revOrders += rev.orders
+        revSalesCash += rev.salesCash
+        revSalesBank += rev.salesBank
+        revSalesInvoice += rev.salesInvoice
+      }
       for (const e of byShop[sid]?.entries ?? []) {
         if (e.source === 'SALARY') {
           if (e.isIncome) fines      += e.amount  // штраф = приход в кассу
@@ -166,8 +177,9 @@ export default function CashPage() {
         }
       }
     }
+    const revSales = revSalesCash + revSalesBank + revSalesInvoice
     const totalRev = revOrders + revSales + incManual + fines
-    return { revOrders, revSales, incManual, expenses, salaryPaid, fines, totalRev, net: totalRev - expenses - salaryPaid }
+    return { revOrders, revSales, revSalesCash, revSalesBank, revSalesInvoice, incManual, expenses, salaryPaid, fines, totalRev, net: totalRev - expenses - salaryPaid }
   }, [visibleShopIds, revenue, byShop])
 
   async function submitEntry() {
@@ -293,7 +305,9 @@ export default function CashPage() {
           <div className="bg-gray-50 rounded-xl px-3 py-2 flex items-center gap-x-4 gap-y-1 flex-wrap text-xs">
             {[
               { label: 'Заказы',    val: totals.revOrders,  plus: true  },
-              { label: 'Продажи',   val: totals.revSales,   plus: true  },
+              { label: 'Продажи нал',    val: totals.revSalesCash,    plus: true  },
+              { label: 'Продажи безнал', val: totals.revSalesBank,    plus: true  },
+              { label: 'Счета',          val: totals.revSalesInvoice, plus: true  },
               { label: 'Расходы',   val: totals.expenses,   plus: false },
               ...(totals.salaryPaid > 0 ? [{ label: 'ЗП',      val: totals.salaryPaid, plus: false }] : []),
               ...(totals.fines      > 0 ? [{ label: 'Штрафы',  val: totals.fines,      plus: true  }] : []),
@@ -316,12 +330,12 @@ export default function CashPage() {
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
           {visibleShopIds.map(sid => {
             const shopName = byShop[sid]?.name ?? shops.find(s => s.id === sid)?.name ?? sid
-            const rev = revenue[sid] ?? { orders: 0, sales: 0 }
+            const rev = revenue[sid] ?? { orders: 0, salesCash: 0, salesBank: 0, salesInvoice: 0, salesTotal: 0 }
             const shopEntries    = byShop[sid]?.entries ?? []
             const visibleEntries = showSalary ? shopEntries : shopEntries.filter(e => e.source !== 'SALARY')
             const shopExpenses  = shopEntries.filter(e => !e.isIncome).reduce((s, e) => s + e.amount, 0)
             const shopIncManual = shopEntries.filter(e =>  e.isIncome).reduce((s, e) => s + e.amount, 0)
-            const shopRevTotal  = rev.orders + rev.sales
+            const shopRevTotal  = rev.orders + rev.salesTotal
             const shopNet       = shopRevTotal + shopIncManual - shopExpenses
             const isCollapsed   = collapsedShops.has(sid)
             const toggleCollapse = () => setCollapsedShops(prev => {
@@ -355,7 +369,9 @@ export default function CashPage() {
                 {/* Статы */}
                 <div className="px-3 py-2 flex flex-wrap gap-x-4 gap-y-1 text-xs border-b border-gray-50">
                   {rev.orders > 0 && <span className="text-gray-400">Заказы <span className="font-medium text-green-600">+{fmt(rev.orders)}</span></span>}
-                  {rev.sales  > 0 && <span className="text-gray-400">Продажи <span className="font-medium text-green-600">+{fmt(rev.sales)}</span></span>}
+                  {rev.salesCash    > 0 && <span className="text-gray-400">Продажи нал <span className="font-medium text-green-600">+{fmt(rev.salesCash)}</span></span>}
+                  {rev.salesBank    > 0 && <span className="text-gray-400">Продажи безнал <span className="font-medium text-green-600">+{fmt(rev.salesBank)}</span></span>}
+                  {rev.salesInvoice > 0 && <span className="text-gray-400">Счета <span className="font-medium text-green-600">+{fmt(rev.salesInvoice)}</span></span>}
                   {shopExpenses > 0 && <span className="text-gray-400">Расходы <span className="font-medium text-red-500">−{fmt(shopExpenses)}</span></span>}
                   <span className="w-full text-gray-400 sm:ml-auto sm:w-auto">Итого <span className={`font-semibold ${shopNet >= 0 ? 'text-green-600' : 'text-red-500'}`}>{shopNet >= 0 ? '+' : '−'}{fmt(Math.abs(shopNet))}</span></span>
                 </div>
@@ -432,7 +448,7 @@ export default function CashPage() {
                   </div>
                 )}
 
-                {visibleEntries.length === 0 && rev.orders === 0 && rev.sales === 0 && (
+                {visibleEntries.length === 0 && rev.orders === 0 && rev.salesTotal === 0 && (
                   <p className="text-center py-5 text-gray-400 text-xs">Нет операций за период</p>
                 )}
               </div>

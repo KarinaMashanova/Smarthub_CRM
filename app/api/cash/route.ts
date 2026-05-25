@@ -62,7 +62,7 @@ export async function GET(req: NextRequest) {
     prisma.sale.groupBy({
       by: ['shopId'],
       where: { ...shopFilter, date: { gte: from, lte: to }, isReturn: false },
-      _sum: { cashMoney: true, cashBank: true, revenue: true },
+      _sum: { cashMoney: true, cashBank: true, cashInvoice: true, revenue: true },
     }),
     prisma.employee.findMany({ select: { name: true, appRole: true, shopId: true } }),
     // Штрафы и выплаты зарплаты из ЗП-раздела
@@ -80,17 +80,31 @@ export async function GET(req: NextRequest) {
     }),
   ])
 
-  // revenue map: { [shopId]: { orders, sales } }
-  const revenue: Record<string, { orders: number; sales: number }> = {}
+  // revenue map: { [shopId]: { orders, salesCash, salesBank, salesInvoice, salesTotal } }
+  const revenue: Record<string, {
+    orders: number
+    salesCash: number
+    salesBank: number
+    salesInvoice: number
+    salesTotal: number
+  }> = {}
+  const ensureRevenue = (shopId: string) => {
+    if (!revenue[shopId]) {
+      revenue[shopId] = { orders: 0, salesCash: 0, salesBank: 0, salesInvoice: 0, salesTotal: 0 }
+    }
+    return revenue[shopId]
+  }
   for (const r of orderRev) {
     if (!r.shopId) continue
-    if (!revenue[r.shopId]) revenue[r.shopId] = { orders: 0, sales: 0 }
-    revenue[r.shopId].orders += r._sum.revenue ?? 0
+    ensureRevenue(r.shopId).orders += r._sum.revenue ?? 0
   }
   for (const r of saleRev) {
     if (!r.shopId) continue
-    if (!revenue[r.shopId]) revenue[r.shopId] = { orders: 0, sales: 0 }
-    revenue[r.shopId].sales += (r._sum.cashMoney ?? 0) + (r._sum.cashBank ?? 0)
+    const row = ensureRevenue(r.shopId)
+    row.salesCash += r._sum.cashMoney ?? 0
+    row.salesBank += r._sum.cashBank ?? 0
+    row.salesInvoice += r._sum.cashInvoice ?? 0
+    row.salesTotal += r._sum.revenue ?? (r._sum.cashMoney ?? 0) + (r._sum.cashBank ?? 0) + (r._sum.cashInvoice ?? 0)
   }
 
   const shopNameMap = new Map(allShops.map(s => [s.id, s.name]))

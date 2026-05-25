@@ -159,6 +159,12 @@ test.describe('manager mode', () => {
     expect(res.status()).toBe(200)
     const data = await res.json()
     expect(data.shops.map((shop: { name: string }) => shop.name)).toContain(employee.location)
+    for (const row of Object.values(data.revenue) as Array<Record<string, number>>) {
+      expect(row).toHaveProperty('salesCash')
+      expect(row).toHaveProperty('salesBank')
+      expect(row).toHaveProperty('salesInvoice')
+      expect(row).toHaveProperty('salesTotal')
+    }
   })
 })
 
