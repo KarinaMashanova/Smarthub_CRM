@@ -12,7 +12,7 @@ const HELP_ITEMS = [
   { label: 'Тепловая карта', desc: 'Таблица «По дням» показывает выручку или маржу каждого салона за каждый день. Цвет ячейки — интенсивность относительно максимума за период.' },
 ]
 import {
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
   ResponsiveContainer,
 } from 'recharts'
 
@@ -20,7 +20,7 @@ interface KPI {
   totalCount: number; totalRev: number; totalMargin: number; totalSalary: number
   vimrCount: number; avgCheck: number; withMarginCount: number
 }
-interface DayData    { day: number; revenue: number; margin: number; count: number }
+interface DayData    { day: number; revenue: number; margin: number; count: number; salesRevenue: number }
 interface ManagerRow { name: string; count: number; revenue: number; margin: number; salary: number; vmr: number }
 interface ShopRow    { name: string; count: number; revenue: number; margin: number }
 interface ShopSummaryRow {
@@ -31,11 +31,16 @@ interface ShopSummaryRow {
 }
 interface TypeRow    { name: string; revenue: number }
 interface PayRow     { name: string; count: number }
+interface ProductGroupRow { name: string; count: number; revenue: number; margin: number }
 interface ShopDayRow { name: string; total: { revenue: number; margin: number }; days: { day: number; revenue: number; margin: number }[] }
 
 const MONTH_SHORT     = ['Янв','Фев','Мар','Апр','Май','Июн','Июл','Авг','Сен','Окт','Ноя','Дек']
-const AVAILABLE_YEARS = [2026, 2027]
+const MONTHS          = ['Январь','Февраль','Март','Апрель','Май','Июнь','Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь']
+const AVAILABLE_YEARS = [2025, 2026]
 
+function toISO(d: Date) {
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
+}
 function fmt(n: number) {
   if (n === 0) return '—'
   return n.toLocaleString('ru-RU') + ' ₽'
@@ -43,8 +48,8 @@ function fmt(n: number) {
 
 function fmtCell(n: number) {
   if (n === 0) return ''
-  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'М'
-  if (n >= 1_000)     return (n / 1_000).toFixed(0) + 'к'
+  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + ' млн'
+  if (n >= 1_000)     return (n / 1_000).toFixed(0) + ' тыс'
   return String(Math.round(n))
 }
 
@@ -57,52 +62,69 @@ function cellCls(value: number, max: number, metric: 'revenue' | 'margin') {
     if (r > 0.2) return 'bg-blue-100 text-blue-700'
     return 'bg-blue-50 text-blue-500'
   } else {
-    if (r > 0.8) return 'bg-emerald-600 text-white font-medium'
-    if (r > 0.5) return 'bg-emerald-300 text-emerald-900'
-    if (r > 0.2) return 'bg-emerald-100 text-emerald-700'
-    return 'bg-emerald-50 text-emerald-500'
+    if (r > 0.8) return 'bg-amber-600 text-white font-medium'
+    if (r > 0.5) return 'bg-amber-300 text-amber-900'
+    if (r > 0.2) return 'bg-amber-100 text-amber-700'
+    return 'bg-amber-50 text-amber-600'
   }
 }
 
 export default function ReportsPage() {
   const now = new Date()
-  const [year,  setYear]  = useState(now.getFullYear())
-  const [month, setMonth] = useState(now.getMonth())
+  const [periodMode, setPeriodMode] = useState<'month' | 'today' | 'yesterday' | 'custom'>('month')
+  const [selYear,    setSelYear]    = useState(now.getFullYear())
+  const [selMonth,   setSelMonth]   = useState(now.getMonth())
+  const [customFrom, setCustomFrom] = useState<string | null>(null)
+  const [customTo,   setCustomTo]   = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
 
   const [kpi,           setKpi]           = useState<KPI | null>(null)
   const [byDay,         setByDay]         = useState<DayData[]>([])
   const [byManager,     setByManager]     = useState<ManagerRow[]>([])
-  const [byShop,        setByShop]        = useState<ShopRow[]>([])
   const [byShopSummary, setByShopSummary] = useState<ShopSummaryRow[]>([])
   const [byType,        setByType]        = useState<TypeRow[]>([])
   const [byPayment,     setByPayment]     = useState<PayRow[]>([])
+  const [byProductGroup, setByProductGroup] = useState<ProductGroupRow[]>([])
   const [byShopByDay,   setByShopByDay]   = useState<ShopDayRow[]>([])
 
-  const [mainTab,      setMainTab]      = useState<'chart' | 'table'>('chart')
-  const [chartMetric,  setChartMetric]  = useState<'revenue' | 'margin'>('revenue')
-  const [pivotMetric,  setPivotMetric]  = useState<'revenue' | 'margin'>('revenue')
-  const [showHelp,     setShowHelp]     = useState(false)
+  const [mainTab,     setMainTab]     = useState<'chart' | 'table'>('chart')
+  const [chartMetric, setChartMetric] = useState<'revenue' | 'margin'>('revenue')
+  const [pivotMetric, setPivotMetric] = useState<'revenue' | 'margin'>('revenue')
+  const [shopView,    setShopView]    = useState<'combined' | 'orders' | 'sales'>('combined')
+  const [showHelp,    setShowHelp]    = useState(false)
+
+  const todayISO     = toISO(new Date())
+  const yesterdayISO = toISO(new Date(Date.now() - 86400000))
+  const monthFrom    = toISO(new Date(selYear, selMonth, 1))
+  const monthTo      = toISO(new Date(selYear, selMonth + 1, 0))
+  const from = periodMode === 'today'     ? todayISO
+             : periodMode === 'yesterday' ? yesterdayISO
+             : periodMode === 'custom'    ? (customFrom ?? todayISO)
+             : monthFrom
+  const to   = periodMode === 'today'     ? todayISO
+             : periodMode === 'yesterday' ? yesterdayISO
+             : periodMode === 'custom'    ? (customTo ?? todayISO)
+             : monthTo
 
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const res = await fetch(`/api/reports/orders?year=${year}&month=${month}`)
+      const res = await fetch(`/api/reports/orders?from=${from}&to=${to}`)
       if (res.ok) {
         const d = await res.json()
         setKpi(d.kpi)
         setByDay(d.byDay ?? [])
         setByManager(d.byManager ?? [])
-        setByShop(d.byShop ?? [])
         setByShopSummary(d.byShopSummary ?? [])
         setByType(d.byType ?? [])
         setByPayment(d.byPayment ?? [])
+        setByProductGroup(d.byProductGroup ?? [])
         setByShopByDay(d.byShopByDay ?? [])
       }
     } finally {
       setLoading(false)
     }
-  }, [year, month])
+  }, [from, to])
 
   useEffect(() => { load() }, [load])
 
@@ -113,8 +135,19 @@ export default function ReportsPage() {
     <div className="flex flex-col h-[calc(100dvh-8.5rem)] overflow-hidden bg-white md:h-screen">
       {/* Шапка */}
       <div className="shrink-0 border-b border-gray-100 px-4 pt-2.5 pb-2">
+        {/* Строка 1: заголовок + вкладки + справка */}
         <div className="flex items-center gap-2 pb-2">
           <h1 className="font-semibold text-gray-900 text-sm shrink-0">Отчёты</h1>
+          <div className="flex gap-0.5 bg-gray-100 rounded-lg p-0.5">
+            {(['chart', 'table'] as const).map(t => (
+              <button key={t} onClick={() => setMainTab(t)}
+                className={`px-2.5 py-0.5 rounded-md text-xs font-medium transition-colors ${
+                  mainTab === t ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+                }`}>
+                {t === 'chart' ? 'Дашборд' : 'Таблица'}
+              </button>
+            ))}
+          </div>
           <div className="ml-auto">
             <button onClick={() => setShowHelp(true)} title="Справка"
               className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors">
@@ -122,23 +155,45 @@ export default function ReportsPage() {
             </button>
           </div>
         </div>
+        {/* Строка 2: стандартный фильтр дат */}
         <div className="flex items-center gap-1.5 flex-wrap">
           <div className="flex gap-0.5 bg-gray-100 rounded-lg p-0.5">
-            {AVAILABLE_YEARS.map(y => (
-              <button key={y} onClick={() => setYear(y)}
-                className={`px-2.5 py-0.5 rounded-md text-xs font-medium transition-colors ${year === y ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
-                {y}
+            {([['month','Месяц'],['today','Сегодня'],['yesterday','Вчера'],['custom','Период']] as const).map(([mode, label]) => (
+              <button key={mode} onClick={() => {
+                if (mode === 'custom') { setPeriodMode('custom'); setCustomFrom(from); setCustomTo(to) }
+                else setPeriodMode(mode)
+              }}
+                className={`px-2.5 py-0.5 rounded-md text-xs font-medium transition-colors ${
+                  periodMode === mode ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+                }`}>
+                {label}
               </button>
             ))}
           </div>
-          <div className="flex gap-0.5 bg-gray-100 rounded-lg p-0.5">
-            {MONTH_SHORT.map((m, i) => (
-              <button key={i} onClick={() => setMonth(i)}
-                className={`px-2 py-0.5 rounded-md text-xs font-medium transition-colors ${month === i ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
-                {m}
-              </button>
-            ))}
-          </div>
+          {periodMode === 'month' ? (
+            <>
+              <select value={selYear} onChange={e => setSelYear(+e.target.value)}
+                className="h-7 px-2 text-xs rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#FFD600]">
+                {AVAILABLE_YEARS.map(y => <option key={y} value={y}>{y}</option>)}
+              </select>
+              <select value={selMonth} onChange={e => setSelMonth(+e.target.value)}
+                className="h-7 px-2 text-xs rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#FFD600]">
+                {MONTHS.map((m, i) => <option key={i} value={i}>{m}</option>)}
+              </select>
+            </>
+          ) : periodMode === 'custom' ? (
+            <>
+              <input type="date" value={customFrom ?? todayISO} onChange={e => setCustomFrom(e.target.value)}
+                className="h-7 px-2 text-xs rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#FFD600]"/>
+              <span className="text-xs text-gray-400">—</span>
+              <input type="date" value={customTo ?? todayISO} onChange={e => setCustomTo(e.target.value)}
+                className="h-7 px-2 text-xs rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#FFD600]"/>
+            </>
+          ) : (
+            <span className="px-2 py-1 rounded-lg text-xs font-medium bg-gray-100 text-gray-500">
+              {periodMode === 'today' ? todayISO : yesterdayISO}
+            </span>
+          )}
         </div>
       </div>
 
@@ -150,24 +205,20 @@ export default function ReportsPage() {
         <div className="flex-1 overflow-y-auto p-4 space-y-4">
 
           {/* KPI */}
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-            <KpiCard label="Заказов"     value={kpi.totalCount.toLocaleString('ru-RU')} sub={`с маржой: ${kpi.withMarginCount}`} />
-            <KpiCard label="Выручка"     value={fmt(kpi.totalRev)} />
-            <KpiCard label="Маржа"       value={fmt(kpi.totalMargin)} />
-            <KpiCard label="ЗП (итого)"  value={fmt(kpi.totalSalary)} />
-            <KpiCard label="Ср. чек"     value={fmt(kpi.avgCheck)} />
-            <KpiCard label="ВМР заказов" value={kpi.vimrCount.toLocaleString('ru-RU')} accent />
-          </div>
-
-          {/* Табы */}
-          <div className="flex gap-2">
-            {(['chart','table'] as const).map(t => (
-              <button key={t} onClick={() => setMainTab(t)}
-                className={`px-4 py-1.5 rounded-lg text-sm font-medium ${mainTab === t ? 'bg-[#FFD600] text-black' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
-                {t === 'chart' ? 'Дашборд' : 'Таблица'}
-              </button>
-            ))}
-          </div>
+          {(() => {
+            const salesRev = byShopSummary.reduce((s, r) => s + r.sales.revenue, 0)
+            return (
+              <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3">
+                <KpiCard label="Заказов"       value={kpi.totalCount.toLocaleString('ru-RU')} sub={`с маржой: ${kpi.withMarginCount}`} />
+                <KpiCard label="Выр. заказы"   value={fmt(kpi.totalRev)} />
+                <KpiCard label="Выр. продажи"  value={fmt(salesRev)} />
+                <KpiCard label="Выручка итого" value={fmt(kpi.totalRev + salesRev)} accent />
+                <KpiCard label="Маржа"         value={fmt(kpi.totalMargin)} />
+                <KpiCard label="Ср. чек"       value={fmt(kpi.avgCheck)} />
+                <KpiCard label="ВМР"           value={kpi.vimrCount.toLocaleString('ru-RU')} />
+              </div>
+            )
+          })()}
 
           {mainTab === 'chart' && (
             <>
@@ -175,132 +226,106 @@ export default function ReportsPage() {
               <div className="bg-white rounded-xl border border-gray-100 p-4">
                 <div className="flex items-center justify-between mb-3">
                   <span className="text-sm font-medium text-gray-700">
-                    Динамика по дням — {MONTH_SHORT[month]} {year}
+                    Динамика по дням
                   </span>
-                  <div className="flex gap-1">
-                    {(['revenue','margin'] as const).map(m => (
+                  <div className="flex gap-0.5 bg-gray-100 rounded-lg p-0.5">
+                    {([['revenue','Выручка'],['margin','Маржа']] as const).map(([m, label]) => (
                       <button key={m} onClick={() => setChartMetric(m)}
-                        className={`px-3 py-1 rounded-lg text-xs font-medium ${chartMetric === m ? 'bg-[#FFD600] text-black' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}>
-                        {m === 'revenue' ? 'Выручка' : 'Маржа'}
+                        className={`px-2.5 py-0.5 rounded-md text-xs font-medium transition-colors ${chartMetric === m ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
+                        {label}
                       </button>
                     ))}
                   </div>
                 </div>
-                <ResponsiveContainer width="100%" height={200}>
-                  <BarChart data={byDay} margin={{ top: 4, right: 4, left: 0, bottom: 0 }}>
+                <ResponsiveContainer width="100%" height={220}>
+                  <BarChart data={byDay} margin={{ top: 4, right: 4, left: 0, bottom: 0 }} barCategoryGap="20%">
                     <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                     <XAxis dataKey="day" tick={{ fontSize: 11 }} />
                     <YAxis tick={{ fontSize: 11 }}
-                      tickFormatter={v => v >= 1000 ? Math.round(v / 1000) + 'к' : String(v)}
-                      width={40} />
+                      tickFormatter={v => v >= 1_000_000 ? (v/1_000_000).toFixed(1)+'млн' : v >= 1000 ? Math.round(v/1000)+'тыс' : String(v)}
+                      width={44} />
                     <Tooltip
-                      formatter={(v) => typeof v === 'number' ? fmt(v) : v}
+                      formatter={(v, name) => [typeof v === 'number' ? fmt(v) : v, name === 'revenue' ? 'Заказы' : name === 'salesRevenue' ? 'Продажи' : 'Маржа']}
                       labelFormatter={l => `День ${l}`}
                     />
-                    <Bar
-                      dataKey={chartMetric}
-                      radius={[3, 3, 0, 0]}
-                      fill={chartMetric === 'revenue' ? '#3b82f6' : '#10b981'}
-                    />
+                    {chartMetric === 'revenue' ? (
+                      <>
+                        <Legend formatter={n => n === 'revenue' ? 'Заказы' : 'Продажи'} iconSize={10} wrapperStyle={{ fontSize: 11 }} />
+                        <Bar dataKey="revenue"      name="revenue"      stackId="a" radius={[0,0,0,0]} fill="#3b82f6" />
+                        <Bar dataKey="salesRevenue" name="salesRevenue" stackId="a" radius={[3,3,0,0]} fill="#93c5fd" />
+                      </>
+                    ) : (
+                      <Bar dataKey="margin" name="margin" radius={[3,3,0,0]} fill="#f59e0b" />
+                    )}
                   </BarChart>
                 </ResponsiveContainer>
               </div>
 
-              {/* Заказы и продажи — два отдельных блока */}
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-
-                {/* Блок: Заказы по магазинам */}
-                <div className="bg-white rounded-xl border border-gray-100 overflow-x-auto">
-                  <div className="px-4 py-3 border-b border-gray-50 flex items-center justify-between">
-                    <span className="text-sm font-medium text-gray-700">Заказы по магазинам</span>
-                    <span className="text-xs text-blue-500 font-medium">
-                      {byShopSummary.reduce((s, r) => s + r.orders.count, 0)} заказов
-                    </span>
-                  </div>
-                  <table className="w-full min-w-[520px] text-xs">
-                    <thead>
-                      <tr className="bg-gray-50 text-gray-500">
-                        <th className="text-left px-3 py-2 font-medium">Магазин</th>
-                        <th className="text-right px-3 py-2 font-medium">Кол.</th>
-                        <th className="text-right px-3 py-2 font-medium">Выручка</th>
-                        <th className="text-right px-3 py-2 font-medium">Маржа</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-50">
-                      {byShopSummary.filter(s => s.orders.count > 0).map(s => (
-                        <tr key={s.name} className="hover:bg-gray-50">
-                          <td className="px-3 py-2 text-gray-800 font-medium truncate max-w-[130px]">{s.name}</td>
-                          <td className="px-3 py-2 text-right text-gray-500">{s.orders.count}</td>
-                          <td className="px-3 py-2 text-right text-blue-600">{fmt(s.orders.revenue)}</td>
-                          <td className="px-3 py-2 text-right text-emerald-600">{fmt(s.orders.margin)}</td>
+              {/* Заказы и продажи по магазинам */}
+              {(() => {
+                const ordersTotal  = byShopSummary.reduce((s, r) => s + r.orders.revenue, 0)
+                const salesTotal   = byShopSummary.reduce((s, r) => s + r.sales.revenue, 0)
+                const combinedTotal = ordersTotal + salesTotal
+                return (
+                  <div className="bg-white rounded-xl border border-gray-100 overflow-x-auto">
+                    <div className="px-4 py-3 border-b border-gray-50 flex items-center gap-3">
+                      <span className="text-sm font-medium text-gray-700 shrink-0">По магазинам</span>
+                      <div className="flex gap-0.5 bg-gray-100 rounded-lg p-0.5">
+                        {([['combined','Итого'],['orders','Заказы'],['sales','Продажи']] as const).map(([v, label]) => (
+                          <button key={v} onClick={() => setShopView(v)}
+                            className={`px-2.5 py-0.5 rounded-md text-xs font-medium transition-colors ${
+                              shopView === v ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+                            }`}>
+                            {label}
+                          </button>
+                        ))}
+                      </div>
+                      <span className="ml-auto text-xs text-gray-400 font-medium">
+                        {shopView === 'orders'   ? fmt(ordersTotal)
+                         : shopView === 'sales'  ? fmt(salesTotal)
+                         : fmt(combinedTotal)}
+                      </span>
+                    </div>
+                    <table className="w-full min-w-[480px] text-xs">
+                      <thead>
+                        <tr className="bg-gray-50 text-gray-500">
+                          <th className="text-left px-3 py-2 font-medium">Магазин</th>
+                          {shopView !== 'sales'  && <th className="text-right px-3 py-2 font-medium">Заказов</th>}
+                          {shopView !== 'sales'  && <th className="text-right px-3 py-2 font-medium">Выр. заказы</th>}
+                          {shopView !== 'sales'  && <th className="text-right px-3 py-2 font-medium">Маржа</th>}
+                          {shopView !== 'orders' && <th className="text-right px-3 py-2 font-medium">Продаж</th>}
+                          {shopView !== 'orders' && <th className="text-right px-3 py-2 font-medium">Выр. продажи</th>}
+                          {shopView === 'combined' && <th className="text-right px-3 py-2 font-medium bg-gray-50/80">Итого</th>}
                         </tr>
-                      ))}
-                      {byShopSummary.some(s => s.orders.count > 0) && (() => {
-                        const rows = byShopSummary.filter(s => s.orders.count > 0)
-                        return (
-                          <tr className="border-t-2 border-gray-200 bg-gray-50 font-semibold">
-                            <td className="px-3 py-2 text-gray-700">Итого</td>
-                            <td className="px-3 py-2 text-right text-gray-500">{rows.reduce((s, r) => s + r.orders.count, 0)}</td>
-                            <td className="px-3 py-2 text-right text-blue-600">{fmt(rows.reduce((s, r) => s + r.orders.revenue, 0))}</td>
-                            <td className="px-3 py-2 text-right text-emerald-600">{fmt(rows.reduce((s, r) => s + r.orders.margin, 0))}</td>
+                      </thead>
+                      <tbody className="divide-y divide-gray-50">
+                        {byShopSummary.map(s => (
+                          <tr key={s.name} className="hover:bg-gray-50">
+                            <td className="px-3 py-1.5 text-gray-800 font-medium truncate max-w-[140px]">{s.name}</td>
+                            {shopView !== 'sales'  && <td className="px-3 py-1.5 text-right text-gray-500">{s.orders.count}</td>}
+                            {shopView !== 'sales'  && <td className="px-3 py-1.5 text-right text-blue-600">{s.orders.revenue > 0 ? fmt(s.orders.revenue) : '—'}</td>}
+                            {shopView !== 'sales'  && <td className="px-3 py-1.5 text-right text-amber-600">{s.orders.margin > 0 ? fmt(s.orders.margin) : '—'}</td>}
+                            {shopView !== 'orders' && <td className="px-3 py-1.5 text-right text-gray-500">{s.sales.count}</td>}
+                            {shopView !== 'orders' && <td className="px-3 py-1.5 text-right text-blue-500">{s.sales.revenue > 0 ? fmt(s.sales.revenue) : '—'}</td>}
+                            {shopView === 'combined' && <td className="px-3 py-1.5 text-right font-semibold text-gray-800">{fmt(s.totalRev)}</td>}
                           </tr>
-                        )
-                      })()}
-                      {byShopSummary.every(s => s.orders.count === 0) && (
-                        <tr><td colSpan={4} className="text-center py-6 text-gray-400">Нет заказов</td></tr>
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-
-                {/* Блок: Продажи по магазинам */}
-                <div className="bg-white rounded-xl border border-gray-100 overflow-x-auto">
-                  <div className="px-4 py-3 border-b border-gray-50 flex items-center justify-between">
-                    <span className="text-sm font-medium text-gray-700">Продажи по магазинам</span>
-                    <span className="text-xs text-violet-500 font-medium">
-                      {byShopSummary.reduce((s, r) => s + r.sales.count, 0)} продаж
-                    </span>
-                  </div>
-                  <table className="w-full min-w-[520px] text-xs">
-                    <thead>
-                      <tr className="bg-gray-50 text-gray-500">
-                        <th className="text-left px-3 py-2 font-medium">Магазин</th>
-                        <th className="text-right px-3 py-2 font-medium">Кол.</th>
-                        <th className="text-right px-3 py-2 font-medium">Выручка</th>
-                        <th className="text-right px-3 py-2 font-medium">Ср. чек</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-50">
-                      {byShopSummary.filter(s => s.sales.count > 0).map(s => (
-                        <tr key={s.name} className="hover:bg-gray-50">
-                          <td className="px-3 py-2 text-gray-800 font-medium truncate max-w-[130px]">{s.name}</td>
-                          <td className="px-3 py-2 text-right text-gray-500">{s.sales.count}</td>
-                          <td className="px-3 py-2 text-right text-violet-600">{fmt(s.sales.revenue)}</td>
-                          <td className="px-3 py-2 text-right text-gray-500">
-                            {s.sales.count > 0 ? fmt(Math.round(s.sales.revenue / s.sales.count)) : '—'}
-                          </td>
+                        ))}
+                      </tbody>
+                      <tfoot>
+                        <tr className="border-t-2 border-gray-200 bg-gray-50 font-semibold">
+                          <td className="px-3 py-1.5 text-gray-700">Итого</td>
+                          {shopView !== 'sales'  && <td className="px-3 py-1.5 text-right text-gray-500">{byShopSummary.reduce((s,r)=>s+r.orders.count,0)}</td>}
+                          {shopView !== 'sales'  && <td className="px-3 py-1.5 text-right text-blue-600">{fmt(ordersTotal)}</td>}
+                          {shopView !== 'sales'  && <td className="px-3 py-1.5 text-right text-amber-600">{fmt(byShopSummary.reduce((s,r)=>s+r.orders.margin,0))}</td>}
+                          {shopView !== 'orders' && <td className="px-3 py-1.5 text-right text-gray-500">{byShopSummary.reduce((s,r)=>s+r.sales.count,0)}</td>}
+                          {shopView !== 'orders' && <td className="px-3 py-1.5 text-right text-blue-500">{fmt(salesTotal)}</td>}
+                          {shopView === 'combined' && <td className="px-3 py-1.5 text-right text-gray-800">{fmt(combinedTotal)}</td>}
                         </tr>
-                      ))}
-                      {byShopSummary.some(s => s.sales.count > 0) && (() => {
-                        const rows = byShopSummary.filter(s => s.sales.count > 0)
-                        const totalSalesRev = rows.reduce((s, r) => s + r.sales.revenue, 0)
-                        const totalSalesCnt = rows.reduce((s, r) => s + r.sales.count, 0)
-                        return (
-                          <tr className="border-t-2 border-gray-200 bg-gray-50 font-semibold">
-                            <td className="px-3 py-2 text-gray-700">Итого</td>
-                            <td className="px-3 py-2 text-right text-gray-500">{totalSalesCnt}</td>
-                            <td className="px-3 py-2 text-right text-violet-600">{fmt(totalSalesRev)}</td>
-                            <td className="px-3 py-2 text-right text-gray-500">{totalSalesCnt > 0 ? fmt(Math.round(totalSalesRev / totalSalesCnt)) : '—'}</td>
-                          </tr>
-                        )
-                      })()}
-                      {byShopSummary.every(s => s.sales.count === 0) && (
-                        <tr><td colSpan={4} className="text-center py-6 text-gray-400">Нет продаж</td></tr>
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
+                      </tfoot>
+                    </table>
+                  </div>
+                )
+              })()}
 
               {/* Менеджеры + типы/оплата */}
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
@@ -326,7 +351,7 @@ export default function ReportsPage() {
                             <td className="px-3 py-2 text-gray-800 max-w-[140px] truncate">{m.name}</td>
                             <td className="px-3 py-2 text-right text-gray-600">{m.count}</td>
                             <td className="px-3 py-2 text-right text-blue-600">{fmt(m.revenue)}</td>
-                            <td className="px-3 py-2 text-right text-emerald-600">{fmt(m.margin)}</td>
+                            <td className="px-3 py-2 text-right text-amber-600">{fmt(m.margin)}</td>
                             <td className="px-3 py-2 text-right text-violet-600">{fmt(m.salary)}</td>
                             <td className="px-3 py-2 text-right">
                               {m.vmr > 0 && (
@@ -382,6 +407,46 @@ export default function ReportsPage() {
                     </div>
                   </div>
                 </div>
+
+                <div className="lg:col-span-3 bg-white rounded-xl border border-gray-100 overflow-hidden">
+                  <div className="px-4 py-3 border-b border-gray-50 flex items-center justify-between">
+                    <span className="text-sm font-medium text-gray-700">Продажи по группам товаров</span>
+                    <span className="text-xs text-gray-400">
+                      {byProductGroup.reduce((s, r) => s + r.count, 0).toLocaleString('ru-RU')} позиций
+                    </span>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full min-w-[620px] text-xs">
+                      <thead>
+                        <tr className="bg-gray-50 text-gray-500">
+                          <th className="text-left px-3 py-2 font-medium">Группа</th>
+                          <th className="text-right px-3 py-2 font-medium">Позиций</th>
+                          <th className="text-right px-3 py-2 font-medium">Выручка</th>
+                          <th className="text-right px-3 py-2 font-medium">Маржа</th>
+                          <th className="text-right px-3 py-2 font-medium">Доля</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-50">
+                        {byProductGroup.map(g => {
+                          const totalGroupRev = byProductGroup.reduce((s, row) => s + row.revenue, 0)
+                          const pct = totalGroupRev > 0 ? Math.round(g.revenue / totalGroupRev * 100) : 0
+                          return (
+                            <tr key={g.name} className="hover:bg-gray-50">
+                              <td className="px-3 py-2 text-gray-800 font-medium">{g.name}</td>
+                              <td className="px-3 py-2 text-right text-gray-500">{g.count.toLocaleString('ru-RU')}</td>
+                              <td className="px-3 py-2 text-right text-blue-600">{fmt(g.revenue)}</td>
+                              <td className="px-3 py-2 text-right text-amber-600">{fmt(g.margin)}</td>
+                              <td className="px-3 py-2 text-right text-gray-500">{pct}%</td>
+                            </tr>
+                          )
+                        })}
+                        {byProductGroup.length === 0 && (
+                          <tr><td colSpan={5} className="text-center py-6 text-gray-400">Нет товарных позиций</td></tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
               </div>
             </>
           )}
@@ -390,13 +455,13 @@ export default function ReportsPage() {
             <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
               <div className="flex items-center justify-between px-4 py-3 border-b border-gray-50">
                 <span className="text-sm font-medium text-gray-700">
-                  Выручка по салонам × дням — {MONTH_SHORT[month]} {year}
+                  Выручка по салонам × дням — {from} — {to}
                 </span>
                 <div className="flex gap-1">
                   {(['revenue','margin'] as const).map(m => (
                     <button key={m} onClick={() => setPivotMetric(m)}
                       className={`px-3 py-1 rounded text-xs ${pivotMetric === m
-                        ? m === 'revenue' ? 'bg-blue-600 text-white' : 'bg-emerald-600 text-white'
+                        ? m === 'revenue' ? 'bg-blue-600 text-white' : 'bg-amber-600 text-white'
                         : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}>
                       {m === 'revenue' ? 'Выручка' : 'Маржа'}
                     </button>
@@ -436,7 +501,7 @@ export default function ReportsPage() {
                               </td>
                             )
                           })}
-                          <td className={`px-3 py-1.5 text-right font-medium border-l border-gray-100 ${pivotMetric === 'revenue' ? 'text-blue-600' : 'text-emerald-600'}`}>
+                          <td className={`px-3 py-1.5 text-right font-medium border-l border-gray-100 ${pivotMetric === 'revenue' ? 'text-blue-600' : 'text-amber-600'}`}>
                             {fmt(totalVal)}
                           </td>
                         </tr>
@@ -467,7 +532,7 @@ export default function ReportsPage() {
                               {fmtCell(v)}
                             </td>
                           ))}
-                          <td className={`px-3 py-1.5 text-right border-l border-gray-100 ${pivotMetric === 'revenue' ? 'text-blue-700' : 'text-emerald-700'}`}>
+                          <td className={`px-3 py-1.5 text-right border-l border-gray-100 ${pivotMetric === 'revenue' ? 'text-blue-700' : 'text-amber-700'}`}>
                             {fmt(grandTotal)}
                           </td>
                         </tr>

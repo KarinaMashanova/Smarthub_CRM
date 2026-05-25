@@ -8,11 +8,19 @@ export async function GET(req: NextRequest) {
   if (session.role !== 'ADMIN') return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
   const { searchParams } = req.nextUrl
-  const now   = new Date()
-  const year  = parseInt(searchParams.get('year')  ?? String(now.getFullYear()))
-  const month = parseInt(searchParams.get('month') ?? String(now.getMonth()))  // 0-based
-  const from  = new Date(year, month, 1)
-  const to    = new Date(year, month + 1, 0, 23, 59, 59)
+  const now = new Date()
+  let from: Date, to: Date
+  const fromParam = searchParams.get('from')
+  const toParam   = searchParams.get('to')
+  if (fromParam && toParam) {
+    from = new Date(fromParam + 'T00:00:00')
+    to   = new Date(toParam   + 'T23:59:59')
+  } else {
+    const year  = parseInt(searchParams.get('year')  ?? String(now.getFullYear()))
+    const month = parseInt(searchParams.get('month') ?? String(now.getMonth()))
+    from = new Date(year, month, 1)
+    to   = new Date(year, month + 1, 0, 23, 59, 59)
+  }
 
   const [orders, sales] = await Promise.all([
     prisma.order.findMany({
@@ -26,9 +34,28 @@ export async function GET(req: NextRequest) {
     }),
     prisma.sale.findMany({
       where: { date: { gte: from, lte: to }, isReturn: false },
-      select: { shopId: true, shop: { select: { name: true } }, revenue: true },
+      select: {
+        shopId: true,
+        shop: { select: { name: true } },
+        revenue: true,
+        date: true,
+        positions: {
+          select: {
+            name: true,
+            isWork: true,
+            soldPrice: true,
+            count: true,
+            purchasePriceSumm: true,
+          },
+        },
+      },
     }),
   ])
+
+  const catalog = await prisma.productCatalog.findMany({
+    select: { name: true, group: true },
+  })
+  const catalogGroupByName = new Map(catalog.map(item => [item.name.toLowerCase(), item.group]))
 
   // Маржа / ЗП на каждый заказ
   const enriched = orders.map(o => {
@@ -52,7 +79,7 @@ export async function GET(req: NextRequest) {
   // По дням (для графика)
   const daysInMonth = to.getDate()
   const byDay = Array.from({ length: daysInMonth }, (_, i) => ({
-    day: i + 1, revenue: 0, margin: 0, count: 0,
+    day: i + 1, revenue: 0, margin: 0, count: 0, salesRevenue: 0,
   }))
   for (const o of enriched) {
     if (!o.dateClose) continue
@@ -61,6 +88,13 @@ export async function GET(req: NextRequest) {
       byDay[d].revenue += o.revenue
       byDay[d].margin  += o.margin ?? 0
       byDay[d].count   += 1
+    }
+  }
+  for (const s of sales) {
+    if (!s.date) continue
+    const d = new Date(s.date).getDate() - 1
+    if (d >= 0 && d < daysInMonth) {
+      byDay[d].salesRevenue += s.revenue
     }
   }
 
@@ -92,11 +126,22 @@ export async function GET(req: NextRequest) {
 
   // По магазинам (продажи)
   const salesMap: Record<string, { count: number; revenue: number }> = {}
+  const productGroupMap: Record<string, { name: string; count: number; revenue: number; margin: number }> = {}
   for (const s of sales) {
     const n = s.shop.name
     if (!salesMap[n]) salesMap[n] = { count: 0, revenue: 0 }
     salesMap[n].count   += 1
     salesMap[n].revenue += s.revenue
+
+    for (const p of s.positions) {
+      if (p.isWork) continue
+      const group = catalogGroupByName.get(p.name.toLowerCase()) ?? 'Без группы'
+      if (!productGroupMap[group]) productGroupMap[group] = { name: group, count: 0, revenue: 0, margin: 0 }
+      const revenue = p.soldPrice * p.count
+      productGroupMap[group].count += p.count
+      productGroupMap[group].revenue += revenue
+      productGroupMap[group].margin += revenue - p.purchasePriceSumm
+    }
   }
 
   // Сводная таблица заказы + продажи по магазинам
@@ -153,6 +198,7 @@ export async function GET(req: NextRequest) {
     byShop,
     byShopSummary,
     byShopByDay,
+    byProductGroup: Object.values(productGroupMap).sort((a, b) => b.revenue - a.revenue),
     byType:    Object.entries(typeMap).map(([name, revenue]) => ({ name, revenue })).sort((a,b) => b.revenue - a.revenue),
     byPayment: Object.entries(payMap).map(([name, count]) => ({ name, count })).sort((a,b) => b.count - a.count),
   })
