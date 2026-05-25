@@ -25,30 +25,9 @@ export async function GET(req: NextRequest) {
     select: { employeeName: true, actionType: true, subType: true, source: true, amount: true, isTaken: true },
   })
 
-  // ── 2. ЗП за продажи — считаем динамически из Sale + SalePosition ─────────
-  const saleWhere: any = {
-    date: { gte: from, lte: to },
-    isReturn: false,
-    sellerName: { not: null },
-    positions: { some: {} },
-  }
-  if (nameFilter) saleWhere.sellerName = session.role === 'MANAGER'
-    ? nameFilter
-    : { contains: nameFilter, mode: 'insensitive' }
-
-  const sales = await prisma.sale.findMany({
-    where: saleWhere,
-    select: {
-      sellerName: true,
-      revenue: true,
-      positions: { select: { purchasePriceSumm: true } },
-    },
-  })
-
   // ── Аккумулятор ───────────────────────────────────────────────────────────
   type Detail = { actionType: string; subType: string | null; count: number; amount: number }
   type Acc = {
-    orderSalary: number; salesSalary: number
     bonus: number; addon: number
     ndfl: number; fine: number
     repairEarned: number; repairTaken: number
@@ -56,23 +35,13 @@ export async function GET(req: NextRequest) {
     detailMap: Record<string, Detail>
   }
   const empty = (): Acc => ({
-    orderSalary: 0, salesSalary: 0, bonus: 0, addon: 0,
+    bonus: 0, addon: 0,
     ndfl: 0, fine: 0, repairEarned: 0, repairTaken: 0, paidSalary: 0,
     detailMap: {},
   })
 
   const map: Record<string, Acc> = {}
   const get = (name: string) => { if (!map[name]) map[name] = empty(); return map[name] }
-
-  // Продажи → ЗП продавцу
-  for (const s of sales) {
-    const name = s.sellerName!
-    const cost   = s.positions.reduce((acc, p) => acc + p.purchasePriceSumm, 0)
-    const margin = s.revenue - cost
-    if (margin <= 0) continue
-    const rate = margin >= 5000 ? 0.30 : 0.15
-    get(name).salesSalary += Math.round(margin * rate)
-  }
 
   // TargetAction
   for (const r of rows) {
@@ -102,21 +71,21 @@ export async function GET(req: NextRequest) {
   const stats = Object.entries(map)
     .map(([name, d]) => {
       const totalRepair = d.repairEarned + d.repairTaken
-      const accrued = d.orderSalary + d.salesSalary + d.bonus + d.addon - d.ndfl - d.fine - totalRepair
+      const accrued  = d.bonus + d.addon - d.ndfl - d.fine - d.repairTaken
+      const остаток  = accrued - d.paidSalary
       return {
         name,
-        orderSalary: d.orderSalary, salesSalary: d.salesSalary,
         bonus: d.bonus, addon: d.addon,
         ndfl: d.ndfl, fine: d.fine,
         repairEarned: d.repairEarned, repairTaken: d.repairTaken, totalRepair,
-        paidSalary: d.paidSalary, accrued,
+        paidSalary: d.paidSalary, accrued, остаток,
         details: Object.values(d.detailMap).sort((a, b) => {
           const ti = TYPE_ORDER.indexOf(a.actionType) - TYPE_ORDER.indexOf(b.actionType)
           return ti !== 0 ? ti : b.amount - a.amount
         }),
       }
     })
-    .filter(s => s.orderSalary + s.salesSalary + s.bonus + s.addon + s.ndfl + s.fine + s.totalRepair + s.paidSalary > 0)
+    .filter(s => s.bonus + s.addon + s.ndfl + s.fine + s.totalRepair + s.paidSalary > 0)
     .sort((a, b) => b.accrued - a.accrued)
 
   return NextResponse.json({ stats })

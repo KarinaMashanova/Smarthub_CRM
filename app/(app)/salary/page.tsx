@@ -28,9 +28,9 @@ interface RepairWork {
 interface StatDetail { actionType: string; subType: string | null; count: number; amount: number }
 interface StatRow {
   name: string
-  orderSalary: number; salesSalary: number; bonus: number; addon: number
+  bonus: number; addon: number
   ndfl: number; fine: number; totalRepair: number; repairEarned: number; repairTaken: number
-  paidSalary: number; accrued: number
+  paidSalary: number; accrued: number; остаток: number
   details: StatDetail[]
 }
 interface Session { name: string; role: 'MANAGER' | 'ADMIN'; shopId?: string | null }
@@ -38,17 +38,18 @@ interface AdminEmployee { id: string; name: string; appRole: string | null }
 
 const ACTION_TYPES = ['Выплата Зарплаты', 'Доначисление Оклада', 'Бонус', 'Штраф']
 const ACTION_COLORS: Record<string, string> = {
-  'Выплата Зарплаты':    'bg-blue-100 text-blue-700',
-  'Доначисление Оклада': 'bg-sky-100 text-sky-700',
-  'Бонус':               'bg-amber-100 text-amber-700',
+  'Выплата Зарплаты':    'bg-orange-100 text-orange-700',
+  'Доначисление Оклада': 'bg-blue-100 text-blue-700',
+  'Бонус':               'bg-green-100 text-green-700',
   'Штраф':               'bg-red-100 text-red-700',
   'Работа по ремонту':   'bg-orange-100 text-orange-700',
 }
-const SUB_COLORS: Record<string, string> = {
-  'Выплата Зарплаты':    'bg-blue-50 text-blue-600',
-  'Доначисление Оклада': 'bg-sky-50 text-sky-600',
-  'Бонус':               'bg-amber-50 text-amber-600',
-  'Штраф':               'bg-red-50 text-red-500',
+const AMOUNT_COLORS: Record<string, string> = {
+  'Выплата Зарплаты':    'text-orange-600',
+  'Доначисление Оклада': 'text-blue-600',
+  'Бонус':               'text-green-600',
+  'Штраф':               'text-red-600',
+  'Работа по ремонту':   'text-orange-600',
 }
 const SUB_TYPES: Record<string, string[]> = {
   'Выплата Зарплаты':    ['Зарплата', 'НДФЛ', 'Оклад'],
@@ -66,11 +67,7 @@ function fmtDate(iso: string | null) {
   const d = new Date(iso)
   return `${d.getDate().toString().padStart(2,'0')}.${(d.getMonth()+1).toString().padStart(2,'0')}.${d.getFullYear()}`
 }
-function fmtMoney(n: number, type: string) {
-  const s = Math.abs(n).toLocaleString('ru-RU') + ' ₽'
-  return type === 'Штраф' ? `−${s}` : `+${s}`
-}
-function fmt(n: number) { return n.toLocaleString('ru-RU') + ' ₽' }
+function fmt(n: number) { return Math.abs(n).toLocaleString('ru-RU') + ' ₽' }
 
 function makeEmpty() {
   const today = toISO(new Date())
@@ -656,15 +653,14 @@ export default function SalaryPage() {
               <thead className="sticky top-0 z-10">
                 <tr className="bg-gray-50 border-b border-gray-200 text-left">
                   <th className="px-3 py-1.5 font-medium text-gray-500">Сотрудник</th>
-                  <th className="px-3 py-1.5 font-medium text-gray-500 text-right w-28" title="Авто-бонус 15%/30% от маржи заказов">ЗП Заказы</th>
-                  <th className="px-3 py-1.5 font-medium text-gray-500 text-right w-28" title="Авто-бонус от маржи продаж">ЗП Продажи</th>
                   <th className="px-3 py-1.5 font-medium text-gray-500 text-right w-24">Бонусы</th>
                   <th className="px-3 py-1.5 font-medium text-gray-500 text-right w-28">Доначисл.</th>
                   <th className="px-3 py-1.5 font-medium text-gray-500 text-right w-20">НДФЛ</th>
                   <th className="px-3 py-1.5 font-medium text-gray-500 text-right w-24">Штрафы</th>
-                  <th className="px-3 py-1.5 font-medium text-gray-500 text-right w-28" title="Оплата ремонтов (вне зарплаты)">Ремонты</th>
+                  <th className="px-3 py-1.5 font-medium text-gray-500 text-right w-28" title="Авансы по ремонтам (забрал)">Ремонты</th>
                   <th className="px-3 py-1.5 font-medium text-gray-500 text-right w-32 bg-yellow-50/60">Итого ЗП</th>
                   <th className="px-3 py-1.5 font-medium text-gray-500 text-right w-28 bg-blue-50/60">Выплачено</th>
+                  <th className="px-3 py-1.5 font-medium text-gray-500 text-right w-32 bg-green-50/60">Остаток</th>
                 </tr>
               </thead>
               <tbody>
@@ -680,24 +676,23 @@ export default function SalaryPage() {
                           <span className={`text-gray-300 transition-transform text-[10px] ${expanded ? 'rotate-90' : ''}`}>▶</span>
                           {s.name}
                         </td>
-                        <td className="px-3 py-1.5 text-right text-blue-700">{s.orderSalary > 0 ? fmt(s.orderSalary) : '—'}</td>
-                        <td className="px-3 py-1.5 text-right text-blue-500">{s.salesSalary > 0 ? fmt(s.salesSalary) : '—'}</td>
-                        <td className="px-3 py-1.5 text-right text-amber-600">{s.bonus > 0 ? fmt(s.bonus) : '—'}</td>
-                        <td className="px-3 py-1.5 text-right text-sky-600">{s.addon > 0 ? fmt(s.addon) : '—'}</td>
-                        <td className="px-3 py-1.5 text-right text-red-400">{s.ndfl > 0 ? `−${fmt(s.ndfl)}` : '—'}</td>
-                        <td className="px-3 py-1.5 text-right text-red-600">{s.fine > 0 ? `−${fmt(s.fine)}` : '—'}</td>
+                        <td className="px-3 py-1.5 text-right text-green-600">{s.bonus > 0 ? fmt(s.bonus) : '—'}</td>
+                        <td className="px-3 py-1.5 text-right text-blue-600">{s.addon > 0 ? fmt(s.addon) : '—'}</td>
+                        <td className="px-3 py-1.5 text-right text-red-400">{s.ndfl > 0 ? fmt(s.ndfl) : '—'}</td>
+                        <td className="px-3 py-1.5 text-right text-red-600">{s.fine > 0 ? fmt(s.fine) : '—'}</td>
                         <td className="px-3 py-1.5 text-right text-orange-500">
-                          {s.totalRepair > 0
-                            ? <span title={`Забрал: ${fmt(s.repairTaken)} / Ожидает: ${fmt(s.repairEarned)}`}>
-                                −{fmt(s.totalRepair)}
-                              </span>
+                          {s.repairTaken > 0
+                            ? <span title={`Всего ремонтов: ${fmt(s.totalRepair)}`}>{fmt(s.repairTaken)}</span>
                             : '—'}
                         </td>
                         <td className={`px-3 py-2 text-right font-semibold bg-yellow-50/40 ${s.accrued >= 0 ? 'text-gray-800' : 'text-red-600'}`}>
-                          {s.accrued >= 0 ? fmt(s.accrued) : `−${fmt(Math.abs(s.accrued))}`}
+                          {fmt(s.accrued)}
                         </td>
-                        <td className="px-3 py-1.5 text-right text-blue-700 bg-blue-50/30">
+                        <td className="px-3 py-1.5 text-right text-orange-600 bg-blue-50/30">
                           {s.paidSalary > 0 ? fmt(s.paidSalary) : '—'}
+                        </td>
+                        <td className={`px-3 py-1.5 text-right font-semibold bg-green-50/30 ${s.остаток > 0 ? 'text-green-700' : s.остаток < 0 ? 'text-red-600' : 'text-gray-400'}`}>
+                          {s.остаток !== 0 ? fmt(s.остаток) : '—'}
                         </td>
                       </tr>
                       {expanded && (
@@ -748,15 +743,14 @@ export default function SalaryPage() {
               <tfoot>
                 <tr className="border-t-2 border-gray-200 bg-gray-50 font-semibold text-xs">
                   <td className="px-3 py-1.5 text-gray-700">Итого</td>
-                  <td className="px-3 py-1.5 text-right text-blue-700">{fmt(stats.reduce((s, r) => s + r.orderSalary, 0))}</td>
-                  <td className="px-3 py-1.5 text-right text-blue-500">{fmt(stats.reduce((s, r) => s + r.salesSalary, 0))}</td>
-                  <td className="px-3 py-1.5 text-right text-amber-600">{fmt(stats.reduce((s, r) => s + r.bonus, 0))}</td>
-                  <td className="px-3 py-1.5 text-right text-sky-600">{fmt(stats.reduce((s, r) => s + r.addon, 0))}</td>
-                  <td className="px-3 py-1.5 text-right text-red-400">−{fmt(stats.reduce((s, r) => s + r.ndfl, 0))}</td>
-                  <td className="px-3 py-1.5 text-right text-red-600">−{fmt(stats.reduce((s, r) => s + r.fine, 0))}</td>
-                  <td className="px-3 py-1.5 text-right text-orange-500">−{fmt(stats.reduce((s, r) => s + r.totalRepair, 0))}</td>
+                  <td className="px-3 py-1.5 text-right text-green-600">{fmt(stats.reduce((s, r) => s + r.bonus, 0))}</td>
+                  <td className="px-3 py-1.5 text-right text-blue-600">{fmt(stats.reduce((s, r) => s + r.addon, 0))}</td>
+                  <td className="px-3 py-1.5 text-right text-red-400">{fmt(stats.reduce((s, r) => s + r.ndfl, 0))}</td>
+                  <td className="px-3 py-1.5 text-right text-red-600">{fmt(stats.reduce((s, r) => s + r.fine, 0))}</td>
+                  <td className="px-3 py-1.5 text-right text-orange-500">{fmt(stats.reduce((s, r) => s + r.repairTaken, 0))}</td>
                   <td className="px-3 py-1.5 text-right text-gray-800 bg-yellow-50/40">{fmt(stats.reduce((s, r) => s + r.accrued, 0))}</td>
-                  <td className="px-3 py-1.5 text-right text-blue-700 bg-blue-50/30">{fmt(stats.reduce((s, r) => s + r.paidSalary, 0))}</td>
+                  <td className="px-3 py-1.5 text-right text-orange-600 bg-blue-50/30">{fmt(stats.reduce((s, r) => s + r.paidSalary, 0))}</td>
+                  <td className="px-3 py-1.5 text-right text-green-700 bg-green-50/30">{fmt(stats.reduce((s, r) => s + r.остаток, 0))}</td>
                 </tr>
               </tfoot>
             </table>
@@ -767,69 +761,82 @@ export default function SalaryPage() {
             <div className="text-center py-20 text-gray-400 text-sm">
               {filterVmr ? 'Нет ВМР-заказов за выбранный период' : 'Нет данных за выбранный период'}
             </div>
-          ) : (
-            <table className="w-full min-w-[760px] text-xs border-collapse">
-              <thead className="sticky top-0 z-10">
-                <tr className="bg-gray-50 border-b border-gray-200 text-left">
-                  <th className="px-3 py-1.5 font-medium text-gray-500 w-[100px]">Дата начисл.</th>
-                  <th className="px-3 py-1.5 font-medium text-gray-500 w-[100px]">Дата выплаты</th>
-                  <th className="px-3 py-1.5 font-medium text-gray-500 w-40">Тип</th>
-                  <th className="px-3 py-1.5 font-medium text-gray-500 w-36">Вид</th>
-                  {isAdmin && <th className="px-3 py-1.5 font-medium text-gray-500">Сотрудник</th>}
-                  <th className="px-3 py-1.5 font-medium text-gray-500 w-28 text-right">Сумма</th>
-                  <th className="px-3 py-1.5 font-medium text-gray-500">Комментарий</th>
-                  {isAdmin && <th className="px-3 py-1.5 font-medium text-gray-500 w-28">Ответственный</th>}
-                  {isAdmin && <th className="px-3 py-1.5 font-medium text-gray-500 w-14">Источник</th>}
-                  {isAdmin && <th className="px-3 py-1.5 font-medium text-gray-500 w-8"></th>}
-                </tr>
-              </thead>
-              <tbody>
-                {filteredActions.map((a, i) => (
-                  <tr key={a.id}
-                    className={`border-b border-gray-100 hover:bg-gray-50/60 ${i % 2 === 1 ? 'bg-gray-50/30' : ''} ${a.isHighMargin ? 'bg-amber-50/40' : ''}`}>
-                    <td className="px-3 py-1.5 text-gray-500 whitespace-nowrap">{fmtDate(a.date)}</td>
-                    <td className="px-3 py-1.5 text-gray-400 whitespace-nowrap">{fmtDate(a.paymentDate)}</td>
-                    <td className="px-3 py-1.5">
-                      <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${ACTION_COLORS[a.actionType] ?? 'bg-gray-100 text-gray-600'}`}>
-                        {a.actionType}
-                      </span>
-                      {a.isHighMargin && (
-                        <span className="ml-1 text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 font-medium">ВМР</span>
-                      )}
-                    </td>
-                    <td className="px-3 py-1.5">
-                      {a.subType
-                        ? <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${SUB_COLORS[a.actionType] ?? 'bg-gray-100 text-gray-500'}`}>{a.subType}</span>
-                        : <span className="text-gray-300">—</span>}
-                    </td>
-                    {isAdmin && <td className="px-3 py-1.5 font-medium text-gray-800">{a.employeeName}</td>}
-                    <td className={`px-3 py-2 text-right font-semibold ${a.actionType === 'Штраф' ? 'text-red-600' : 'text-blue-700'}`}>
-                      {fmtMoney(a.amount, a.actionType)}
-                    </td>
-                    <td className="px-3 py-1.5 text-gray-500">{a.comment ?? '—'}</td>
-                    {isAdmin && <td className="px-3 py-1.5 text-gray-400">{a.responsibleName ?? '—'}</td>}
-                    {isAdmin && (
-                      <td className="px-3 py-2">
-                        <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${
-                          a.source === 'IMPORT' ? 'bg-blue-50 text-blue-500'
-                          : a.source === 'AUTO' ? 'bg-emerald-50 text-emerald-600'
-                          : 'bg-gray-100 text-gray-400'
-                        }`}>
-                          {a.source === 'IMPORT' ? 'Импорт' : a.source === 'AUTO' ? 'Авто' : 'Вручную'}
-                        </span>
-                      </td>
-                    )}
-                    {isAdmin && (
-                      <td className="px-3 py-2">
-                        <button onClick={() => deleteAction(a.id)}
-                          className="text-gray-300 hover:text-red-400 transition-colors text-base leading-none">×</button>
-                      </td>
-                    )}
+          ) : (() => {
+            // Группировка по дням
+            const groups: { date: string; items: TargetAction[] }[] = []
+            for (const a of filteredActions) {
+              const day = (a.date ?? '').slice(0, 10)
+              const last = groups[groups.length - 1]
+              if (last && last.date === day) last.items.push(a)
+              else groups.push({ date: day, items: [a] })
+            }
+            const colCount = 6 + (isAdmin ? 3 : 0)
+            return (
+              <table className="w-full min-w-[760px] text-xs border-collapse">
+                <thead className="sticky top-0 z-10">
+                  <tr className="bg-gray-50 border-b border-gray-200 text-left">
+                    <th className="px-3 py-1.5 font-medium text-gray-500 w-40">Тип</th>
+                    <th className="px-3 py-1.5 font-medium text-gray-500 w-36">Вид</th>
+                    {isAdmin && <th className="px-3 py-1.5 font-medium text-gray-500">Сотрудник</th>}
+                    <th className="px-3 py-1.5 font-medium text-gray-500 w-28 text-right">Сумма</th>
+                    <th className="px-3 py-1.5 font-medium text-gray-500">Комментарий</th>
+                    {isAdmin && <th className="px-3 py-1.5 font-medium text-gray-500 w-28">Ответственный</th>}
+                    {isAdmin && <th className="px-3 py-1.5 font-medium text-gray-500 w-14">Источник</th>}
+                    {isAdmin && <th className="px-3 py-1.5 font-medium text-gray-500 w-8"></th>}
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          )
+                </thead>
+                <tbody>
+                  {groups.map(g => (
+                    <Fragment key={g.date}>
+                      <tr className="bg-gray-50/70 border-b border-gray-200">
+                        <td colSpan={colCount} className="px-3 py-1 text-[11px] font-semibold text-gray-500">
+                          {fmtDate(g.date)}
+                          <span className="ml-2 font-normal text-gray-400">{g.items.length} {g.items.length === 1 ? 'запись' : g.items.length < 5 ? 'записи' : 'записей'}</span>
+                        </td>
+                      </tr>
+                      {g.items.map(a => (
+                        <tr key={a.id}
+                          className={`border-b border-gray-100 hover:bg-gray-50/60 ${a.isHighMargin ? 'bg-amber-50/40' : ''}`}>
+                          <td className="px-3 py-1.5">
+                            <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${ACTION_COLORS[a.actionType] ?? 'bg-gray-100 text-gray-600'}`}>
+                              {a.actionType}
+                            </span>
+                            {a.isHighMargin && (
+                              <span className="ml-1 text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 font-medium">ВМР</span>
+                            )}
+                          </td>
+                          <td className="px-3 py-1.5 text-gray-500">{a.subType ?? <span className="text-gray-300">—</span>}</td>
+                          {isAdmin && <td className="px-3 py-1.5 font-medium text-gray-800">{a.employeeName}</td>}
+                          <td className={`px-3 py-2 text-right font-semibold ${AMOUNT_COLORS[a.actionType] ?? 'text-gray-700'}`}>
+                            {fmt(a.amount)}
+                          </td>
+                          <td className="px-3 py-1.5 text-gray-500">{a.comment ?? '—'}</td>
+                          {isAdmin && <td className="px-3 py-1.5 text-gray-400">{a.responsibleName ?? '—'}</td>}
+                          {isAdmin && (
+                            <td className="px-3 py-2">
+                              <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${
+                                a.source === 'IMPORT' ? 'bg-blue-50 text-blue-500'
+                                : a.source === 'AUTO' ? 'bg-emerald-50 text-emerald-600'
+                                : 'bg-gray-100 text-gray-400'
+                              }`}>
+                                {a.source === 'IMPORT' ? 'Импорт' : a.source === 'AUTO' ? 'Авто' : 'Вручную'}
+                              </span>
+                            </td>
+                          )}
+                          {isAdmin && (
+                            <td className="px-3 py-2">
+                              <button onClick={() => deleteAction(a.id)}
+                                className="text-gray-300 hover:text-red-400 transition-colors text-base leading-none">×</button>
+                            </td>
+                          )}
+                        </tr>
+                      ))}
+                    </Fragment>
+                  ))}
+                </tbody>
+              </table>
+            )
+          })()
         )}
       </div>
 
