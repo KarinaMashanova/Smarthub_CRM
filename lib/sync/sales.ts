@@ -132,13 +132,23 @@ export async function syncSaleDetail(detail: any, shopId: string) {
   await upsertSaleBonus(row, positions)
 }
 
-async function syncSaleList(sales: any[], shopId: string) {
+async function syncSaleList(sales: any[], shopId: string, skipExisting = false) {
+  if (skipExisting && sales.length > 0) {
+    const existingIds = new Set(
+      (await prisma.sale.findMany({
+        where: { id: { in: sales.map(s => s.id) }, sellerName: { not: null } },
+        select: { id: true },
+      })).map(s => s.id)
+    )
+    sales = sales.filter(s => !existingIds.has(s.id))
+  }
+
   let count = 0
   for (const sale of sales) {
     const detail = await liveskladFetch(`/documents/${sale.id}`)
     await syncSaleDetail(detail.data, shopId)
     count++
-    await sleep(200)
+    await sleep(300)
   }
   return count
 }
@@ -165,7 +175,7 @@ export async function syncSalesRange(shopIds: string[], from: Date, to: Date) {
     const sales = await fetchAllPages<any>(
       (page) => `/shops/${shopId}/sales?date=${dateFilter}&page=${page}&pageSize=50&sort=date ASC`
     )
-    count += await syncSaleList(sales, shopId)
+    count += await syncSaleList(sales, shopId, true)
   }
   return count
 }

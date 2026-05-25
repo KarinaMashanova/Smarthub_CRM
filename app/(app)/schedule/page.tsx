@@ -114,9 +114,11 @@ export default function SchedulePage() {
   const statsTo = filterMode === 'month'
     ? new Date(statsYear, statsMonth+1, 0)
     : new Date(customTo)
+  // Cap effective to date at today (shifts in the future don't count yet)
+  const effectiveTo = statsTo > now ? now : statsTo
   const todayISO  = toISO(now)
 
-  const availableYears = [2026, 2027]
+  const STATS_YEARS = [2025, 2026]
 
   useEffect(() => {
     fetch('/api/auth/me').then(r => r.ok ? r.json() : null).then(setSession)
@@ -243,109 +245,159 @@ export default function SchedulePage() {
   return (
     <div className="flex flex-col h-[calc(100dvh-8.5rem)] overflow-hidden bg-white md:h-screen">
 
-      {/* Top bar */}
-      <div className="shrink-0 border-b border-gray-100 px-4 py-2.5 flex items-center gap-3 flex-wrap">
-        <h1 className="font-semibold text-gray-900 text-sm shrink-0">График смен</h1>
-
-        <div className="flex gap-0.5 bg-gray-100 rounded-lg p-0.5">
-          {(['grid','stats'] as const).map(t => (
-            <button key={t} onClick={() => setTab(t)}
-              className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${tab===t ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500'}`}>
-              {t==='grid' ? 'Расписание' : 'Статистика'}
+      {/* Шапка */}
+      <div className="shrink-0 border-b border-gray-100 px-4 pt-2.5 pb-2">
+        <div className="flex items-center gap-2 pb-2 flex-wrap">
+          <h1 className="font-semibold text-gray-900 text-sm shrink-0">График смен</h1>
+          <div className="flex gap-0.5 bg-gray-100 rounded-lg p-0.5">
+            {(['grid','stats'] as const).map(t => (
+              <button key={t} onClick={() => setTab(t)}
+                className={`px-2.5 py-0.5 rounded-md text-xs font-medium transition-colors ${tab===t ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
+                {t==='grid' ? 'Расписание' : 'Статистика'}
+              </button>
+            ))}
+          </div>
+          <div className="ml-auto flex items-center gap-2">
+            {tab === 'grid' && isAdmin && (
+              <button onClick={() => setShowLeaveForm(v => !v)}
+                className={`h-7 px-2.5 text-xs font-medium rounded-lg border transition-colors ${
+                  showLeaveForm ? 'border-gray-300 bg-gray-100 text-gray-700' : 'border-gray-200 text-gray-500 hover:bg-gray-50'
+                }`}>
+                Отпуск / Больничный
+              </button>
+            )}
+            <button onClick={() => setShowHelp(true)} title="Справка"
+              className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors">
+              <svg width="15" height="15" viewBox="0 0 15 15" fill="none"><circle cx="7.5" cy="7.5" r="6" stroke="currentColor" strokeWidth="1.4"/><path d="M6 5.8C6 4.8 7.5 4.5 7.5 5.8c0 .8-1 1-1 2" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/><circle cx="7.5" cy="10.5" r=".6" fill="currentColor"/></svg>
             </button>
-          ))}
+          </div>
         </div>
 
         {tab === 'grid' && (
           <div className="flex items-center gap-1.5">
-            <button onClick={() => setWeekStart(w => addDays(w,-7))} className="p-1 rounded hover:bg-gray-100 text-gray-400">
+            <button onClick={() => setWeekStart(w => addDays(w,-7))} className="p-1 rounded-lg hover:bg-gray-100 text-gray-400">
               <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M9 11L5 7l4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
             </button>
-            <span className="text-xs text-gray-500 w-36 text-center">
+            <span className="text-xs text-gray-500 w-40 text-center font-medium">
               {weekDays[0].getDate()} {MONTH_SHORT[weekDays[0].getMonth()]} — {weekDays[6].getDate()} {MONTH_SHORT[weekDays[6].getMonth()]} {weekDays[6].getFullYear()}
             </span>
-            <button onClick={() => setWeekStart(w => addDays(w,7))} className="p-1 rounded hover:bg-gray-100 text-gray-400">
+            <button onClick={() => setWeekStart(w => addDays(w,7))} className="p-1 rounded-lg hover:bg-gray-100 text-gray-400">
               <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M5 11l4-4-4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
             </button>
-            <button onClick={() => setWeekStart(getMondayOf(new Date()))} className="px-2 py-1 text-xs rounded border border-gray-200 hover:bg-gray-50 text-gray-500 ml-1">Сегодня</button>
+            <button onClick={() => setWeekStart(getMondayOf(new Date()))}
+              className="h-7 px-2.5 text-xs rounded-lg border border-gray-200 hover:bg-gray-50 text-gray-500">
+              Сегодня
+            </button>
           </div>
         )}
-
-        {tab === 'grid' && isAdmin && (
-          <button onClick={() => setShowLeaveForm(v => !v)}
-            className={`ml-1 px-3 py-1.5 text-xs font-medium rounded-xl transition-colors ${
-              showLeaveForm ? 'bg-blue-100 text-blue-700' : 'bg-blue-50 hover:bg-blue-100 text-blue-600'
-            }`}>
-            Отпуск / Больничный
-          </button>
+        {tab === 'stats' && (
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <div className="flex gap-0.5 bg-gray-100 rounded-lg p-0.5">
+              {(['shifts','leave'] as const).map(v => (
+                <button key={v} onClick={() => { setStatsView(v); if (v === 'leave') setStatsLoc('') }}
+                  className={`px-2.5 py-0.5 rounded-md text-xs font-medium transition-colors ${
+                    statsView===v ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+                  }`}>{v === 'shifts' ? 'Смены' : 'Отпуска'}</button>
+              ))}
+            </div>
+            <div className="flex gap-0.5 bg-gray-100 rounded-lg p-0.5">
+              {(['month','custom'] as const).map(m => (
+                <button key={m} onClick={() => setFilterMode(m)}
+                  className={`px-2.5 py-0.5 rounded-md text-xs font-medium transition-colors ${
+                    filterMode===m ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+                  }`}>{m==='month' ? 'Месяц' : 'Период'}</button>
+              ))}
+            </div>
+            {filterMode === 'month' ? (
+              <>
+                <select value={statsYear} onChange={e => setStatsYear(+e.target.value)}
+                  className="h-7 px-2 text-xs rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#FFD600]">
+                  {STATS_YEARS.map(y => <option key={y} value={y}>{y}</option>)}
+                </select>
+                <select value={statsMonth} onChange={e => setStatsMonth(+e.target.value)}
+                  className="h-7 px-2 text-xs rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#FFD600]">
+                  {MONTH_NAMES.map((m,i) => <option key={i} value={i}>{m}</option>)}
+                </select>
+              </>
+            ) : (
+              <>
+                <input type="date" value={customFrom} onChange={e => setCustomFrom(e.target.value)}
+                  className="h-7 px-2 text-xs rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#FFD600]"/>
+                <span className="text-xs text-gray-400">—</span>
+                <input type="date" value={customTo} onChange={e => setCustomTo(e.target.value)}
+                  className="h-7 px-2 text-xs rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#FFD600]"/>
+              </>
+            )}
+            {isAdmin && statsView === 'shifts' && (
+              <select value={statsLoc} onChange={e => setStatsLoc(e.target.value)}
+                className="ml-auto px-2 h-7 text-xs rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#FFD600]">
+                <option value="">Все салоны</option>
+                {allLocs.filter(l => !l.includes('(2)')).map(l => <option key={l} value={l}>{l}</option>)}
+              </select>
+            )}
+          </div>
         )}
-
-        <button onClick={() => setShowHelp(v => !v)} title="Помощь"
-          className={`ml-auto p-1.5 rounded-lg transition-colors ${showHelp ? 'bg-amber-100 text-amber-600' : 'hover:bg-gray-100 text-gray-400'}`}>
-          <svg width="15" height="15" viewBox="0 0 15 15" fill="none"><circle cx="7.5" cy="7.5" r="6" stroke="currentColor" strokeWidth="1.4"/><path d="M6 5.8C6 4.8 7.5 4.5 7.5 5.8c0 .8-1 1-1 2" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/><circle cx="7.5" cy="10.5" r=".6" fill="currentColor"/></svg>
-        </button>
       </div>
 
       {/* Leave modal */}
       {showLeaveForm && isAdmin && (
-        <Modal title="Отпуск / Больничный" onClose={() => setShowLeaveForm(false)}>
-          <div className="space-y-4">
-            <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-medium text-gray-700">Сотрудник</label>
-              <input
-                list="leave-emp-list"
-                value={leaveEmployee}
-                onChange={e => setLeaveEmployee(e.target.value)}
-                placeholder="Фамилия Имя"
-                autoFocus
-                className="px-3 py-2 text-sm rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-300 w-full"
-              />
-              <datalist id="leave-emp-list">{empList.map(e => <option key={e} value={e}/>)}</datalist>
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/30 backdrop-blur-sm">
+          <div className="bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl w-full sm:max-w-sm sm:mx-4 flex flex-col max-h-[92dvh]">
+            <div className="flex items-center justify-between px-6 pt-5 pb-3 shrink-0 border-b border-gray-100">
+              <h2 className="text-sm font-semibold text-gray-800">Отпуск / Больничный</h2>
+              <button onClick={() => setShowLeaveForm(false)} className="text-gray-400 hover:text-gray-600 text-lg leading-none">×</button>
             </div>
-            <div className="flex gap-3">
-              <div className="flex flex-col gap-1.5 flex-1">
-                <label className="text-xs font-medium text-gray-700">С</label>
-                <input type="date" value={leaveFrom} onChange={e => setLeaveFrom(e.target.value)}
-                  className="px-3 py-2 text-sm rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-300 w-full"/>
+            <div className="overflow-y-auto px-6 py-4 flex-1">
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">Сотрудник</label>
+                  <input list="leave-emp-list" value={leaveEmployee} onChange={e => setLeaveEmployee(e.target.value)}
+                    placeholder="Фамилия Имя" autoFocus
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#FFD600]" />
+                  <datalist id="leave-emp-list">{empList.map(e => <option key={e} value={e}/>)}</datalist>
+                </div>
+                <div className="flex gap-3">
+                  <div className="flex-1">
+                    <label className="block text-xs text-gray-500 mb-1">С</label>
+                    <input type="date" value={leaveFrom} onChange={e => setLeaveFrom(e.target.value)}
+                      className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#FFD600]"/>
+                  </div>
+                  <div className="flex-1">
+                    <label className="block text-xs text-gray-500 mb-1">По</label>
+                    <input type="date" value={leaveTo} onChange={e => setLeaveTo(e.target.value)}
+                      className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#FFD600]"/>
+                  </div>
+                </div>
+                <p className="text-[11px] text-gray-400">Обновит все смены сотрудника за выбранный период</p>
+                {leaveDays !== null && (
+                  <div className="px-3 py-2 rounded-lg bg-green-50 text-green-700 text-xs font-medium">
+                    Сохранено {leaveDays} {leaveDays === 1 ? 'день' : leaveDays < 5 ? 'дня' : 'дней'}
+                  </div>
+                )}
+                <div className="flex gap-2">
+                  <button onClick={() => saveLeave('VACATION')}
+                    disabled={leaveSaving || !leaveEmployee.trim() || !leaveFrom || !leaveTo}
+                    className="flex-1 py-2.5 text-sm font-medium rounded-xl bg-blue-100 hover:bg-blue-200 text-blue-700 disabled:opacity-40 transition-colors">
+                    {leaveSaving ? 'Сохранение...' : 'Отпуск'}
+                  </button>
+                  <button onClick={() => saveLeave('SICK')}
+                    disabled={leaveSaving || !leaveEmployee.trim() || !leaveFrom || !leaveTo}
+                    className="flex-1 py-2.5 text-sm font-medium rounded-xl bg-orange-100 hover:bg-orange-200 text-orange-700 disabled:opacity-40 transition-colors">
+                    {leaveSaving ? 'Сохранение...' : 'Больничный'}
+                  </button>
+                </div>
               </div>
-              <div className="flex flex-col gap-1.5 flex-1">
-                <label className="text-xs font-medium text-gray-700">По</label>
-                <input type="date" value={leaveTo} onChange={e => setLeaveTo(e.target.value)}
-                  className="px-3 py-2 text-sm rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-300 w-full"/>
-              </div>
-            </div>
-            <p className="text-[11px] text-gray-400">Обновит все смены сотрудника за выбранный период</p>
-
-            {leaveDays !== null && (
-              <div className="px-3 py-2 rounded-xl bg-green-50 text-green-700 text-xs font-medium">
-                Сохранено {leaveDays} {leaveDays === 1 ? 'день' : leaveDays < 5 ? 'дня' : 'дней'}
-              </div>
-            )}
-
-            <div className="flex gap-2 pt-1">
-              <button
-                onClick={() => saveLeave('VACATION')}
-                disabled={leaveSaving || !leaveEmployee.trim() || !leaveFrom || !leaveTo}
-                className="flex-1 py-2.5 text-sm font-medium rounded-xl bg-blue-100 hover:bg-blue-200 text-blue-700 disabled:opacity-40 transition-colors">
-                {leaveSaving ? 'Сохранение...' : 'Отпуск'}
-              </button>
-              <button
-                onClick={() => saveLeave('SICK')}
-                disabled={leaveSaving || !leaveEmployee.trim() || !leaveFrom || !leaveTo}
-                className="flex-1 py-2.5 text-sm font-medium rounded-xl bg-orange-100 hover:bg-orange-200 text-orange-700 disabled:opacity-40 transition-colors">
-                {leaveSaving ? 'Сохранение...' : 'Больничный'}
-              </button>
             </div>
           </div>
-        </Modal>
+        </div>
       )}
 
       {/* Help panel */}
       {showHelp && (
         <HelpModal
           title="График смен — справка"
-          color="bg-amber-50 border-amber-100"
-          dot="bg-amber-400"
+          color="bg-gray-50 border-gray-100"
+          dot="bg-gray-400"
           items={isAdmin ? HELP_ADMIN : HELP_MANAGER}
           onClose={() => setShowHelp(false)}
         />
@@ -456,51 +508,7 @@ export default function SchedulePage() {
       {tab === 'stats' && (
         <div className="flex-1 overflow-auto px-4 py-4">
 
-          {/* Controls row */}
-          <div className="flex items-center gap-1 mb-2 flex-wrap">
-            {availableYears.map(y => (
-              <button key={y} onClick={() => setStatsYear(y)}
-                className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-colors ${
-                  statsYear===y ? 'bg-gray-800 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                }`}>{y}</button>
-            ))}
-            <div className="ml-auto flex gap-0.5 bg-gray-100 rounded-lg p-0.5">
-              {(['month','custom'] as const).map(m => (
-                <button key={m} onClick={() => setFilterMode(m)}
-                  className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
-                    filterMode===m ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500'
-                  }`}>{m==='month' ? 'По месяцу' : 'Период'}</button>
-              ))}
-            </div>
-          </div>
-
-          <div className="flex items-center gap-1.5 mb-3 flex-wrap">
-            {filterMode === 'month' ? (
-              MONTH_SHORT.map((m,i) => (
-                <button key={i} onClick={() => setStatsMonth(i)}
-                  className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-colors ${
-                    statsMonth===i ? 'bg-[#FFD600] text-black' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                  }`}>{m}</button>
-              ))
-            ) : (
-              <div className="flex items-center gap-2">
-                <input type="date" value={customFrom} onChange={e => setCustomFrom(e.target.value)}
-                  className="px-2 py-1 text-xs rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#FFD600]"/>
-                <span className="text-xs text-gray-400">—</span>
-                <input type="date" value={customTo} onChange={e => setCustomTo(e.target.value)}
-                  className="px-2 py-1 text-xs rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#FFD600]"/>
-              </div>
-            )}
-            {isAdmin && statsView === 'shifts' && (
-              <select value={statsLoc} onChange={e => setStatsLoc(e.target.value)}
-                className="ml-auto px-2 py-1 text-xs rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#FFD600]">
-                <option value="">Все салоны</option>
-                {allLocs.filter(l => !l.includes('(2)')).map(l => <option key={l} value={l}>{l}</option>)}
-              </select>
-            )}
-          </div>
-
-          {/* Search + view toggle */}
+          {/* Search */}
           <div className="flex items-center gap-2 mb-3">
             <input
               value={statsSearch}
@@ -508,16 +516,6 @@ export default function SchedulePage() {
               placeholder="Поиск по фамилии..."
               className="px-3 py-1.5 text-xs rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#FFD600] w-48"
             />
-          </div>
-          <div className="flex gap-0.5 bg-gray-100 rounded-lg p-0.5 w-fit mb-3">
-            {(['shifts', 'leave'] as const).map(v => (
-              <button key={v} onClick={() => setStatsView(v)}
-                className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${
-                  statsView===v ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
-                }`}>
-                {v === 'shifts' ? 'Смены' : 'Отпуска и больничные'}
-              </button>
-            ))}
           </div>
 
           {loadingStats ? (
@@ -533,7 +531,12 @@ export default function SchedulePage() {
               return (
             <>
               <p className="text-xs text-gray-400 mb-3">
-                {filterMode === 'month' ? `${MONTH_NAMES[statsMonth]} ${statsYear}` : `${customFrom} — ${customTo}`}
+                {filterMode === 'month'
+                  ? `${MONTH_NAMES[statsMonth]} ${statsYear}`
+                  : `${statsFrom.toLocaleDateString('ru-RU', {day:'2-digit',month:'2-digit'})} — ${effectiveTo.toLocaleDateString('ru-RU', {day:'2-digit',month:'2-digit'})}`}
+                {filterMode === 'month' && effectiveTo < statsTo
+                  ? ` · по ${effectiveTo.toLocaleDateString('ru-RU', {day:'numeric',month:'long'})}`
+                  : ''}
                 {' · '}{filtered.reduce((s,r) => s+r.total, 0)} смен
                 {statsSearch && ` · найдено ${filtered.length}`}
               </p>

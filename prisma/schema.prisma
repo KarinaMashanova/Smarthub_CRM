@@ -240,12 +240,22 @@ model CashEntry {
   payMethod  String   // CASH | CARD | TRANSFER
   isIncome   Boolean
   amount     Float
-  comment    String?
-  authorName String
-  createdAt  DateTime @default(now())
+  comment      String?
+  authorName   String
+  linkedName   String?
+  createdAt    DateTime @default(now())
 
   @@index([shopId])
   @@index([date])
+}
+
+model ProductCatalog {
+  id            Int      @id @default(autoincrement())
+  name          String   @unique
+  group         String
+  purchasePrice Float
+  retailPrice   Float
+  uploadedAt    DateTime @default(now()) @updatedAt
 }
 
 model CashBalance {

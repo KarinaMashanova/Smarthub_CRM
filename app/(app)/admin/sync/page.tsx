@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback, useRef } from 'react'
+import Link from 'next/link'
 
 interface SyncLog {
   id: number
@@ -246,6 +247,20 @@ export default function SyncPage() {
                 {directoryError || `Салоны: ${directoryResult?.shops ?? 0}, сотрудники: ${directoryResult?.employees ?? 0}`}
               </div>
             )}
+          </div>
+        </div>
+
+        {/* Catalog */}
+        <div>
+          <p className="text-xs font-medium text-gray-500 mb-2">Справочник товаров</p>
+          <div className="bg-gray-50 rounded-xl px-4 py-4 flex flex-wrap items-center gap-3">
+            <div className="min-w-0">
+              <p className="text-sm font-medium text-gray-900">Прайс для бонуса РЦ</p>
+              <p className="text-xs text-gray-400 mt-0.5">Загружайте Excel раз в неделю. Аксы, Стекло, Игрушки, Чехлы.</p>
+            </div>
+            <Link href="/admin/catalog" className="ml-auto text-xs px-3 py-1.5 rounded-lg bg-gray-900 text-white hover:bg-gray-800">
+              Обновить справочник →
+            </Link>
           </div>
         </div>
 

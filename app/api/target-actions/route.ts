@@ -82,5 +82,25 @@ export async function POST(req: NextRequest) {
       paymentDate:     body.paymentDate ? new Date(body.paymentDate) : null,
     },
   })
+
+  if (body.actionType === 'Штраф' || body.actionType === 'Выплата Зарплаты') {
+    const employee = await prisma.employee.findFirst({ where: { name: body.employeeName }, select: { shopId: true } })
+    if (employee?.shopId) {
+      await prisma.cashEntry.create({
+        data: {
+          date:        new Date(body.date),
+          shopId:      employee.shopId,
+          type:        body.actionType,
+          payMethod:   'CASH',
+          isIncome:    body.actionType === 'Штраф',
+          amount:      Number(body.amount),
+          comment:     body.comment || null,
+          authorName:  session.name,
+          linkedName:  body.employeeName,
+        },
+      })
+    }
+  }
+
   return NextResponse.json(action)
 }

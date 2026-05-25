@@ -39,14 +39,14 @@ interface AdminEmployee { id: string; name: string; appRole: string | null }
 const ACTION_TYPES = ['Выплата Зарплаты', 'Доначисление Оклада', 'Бонус', 'Штраф']
 const ACTION_COLORS: Record<string, string> = {
   'Выплата Зарплаты':    'bg-green-100 text-green-700',
-  'Доначисление Оклада': 'bg-purple-100 text-purple-700',
+  'Доначисление Оклада': 'bg-sky-100 text-sky-700',
   'Бонус':               'bg-amber-100 text-amber-700',
   'Штраф':               'bg-red-100 text-red-700',
   'Работа по ремонту':   'bg-orange-100 text-orange-700',
 }
 const SUB_COLORS: Record<string, string> = {
   'Выплата Зарплаты':    'bg-green-50 text-green-600',
-  'Доначисление Оклада': 'bg-purple-50 text-purple-600',
+  'Доначисление Оклада': 'bg-sky-50 text-sky-600',
   'Бонус':               'bg-amber-50 text-amber-600',
   'Штраф':               'bg-red-50 text-red-500',
 }
@@ -96,8 +96,11 @@ export default function SalaryPage() {
   const [filterVmr, setFilterVmr] = useState(false)
 
   // List filters
-  const [month, setMonth]                   = useState(now.getMonth())
-  const [year, setYear]                     = useState(now.getFullYear())
+  const [month,          setMonth]          = useState(now.getMonth())
+  const [year,           setYear]           = useState(now.getFullYear())
+  const [listPeriodMode, setListPeriodMode] = useState<'month' | 'custom'>('month')
+  const [listCustomFrom, setListCustomFrom] = useState<string | null>(null)
+  const [listCustomTo,   setListCustomTo]   = useState<string | null>(null)
   const [filterEmployee, setFilterEmployee] = useState('')
   const [filterType, setFilterType]         = useState('')
   const [filterSubType, setFilterSubType]   = useState('')
@@ -127,8 +130,8 @@ export default function SalaryPage() {
   const [takenPickerId, setTakenPickerId]   = useState<number | null>(null)
   const [takenPickerDate, setTakenPickerDate] = useState(toISO(new Date()))
 
-  const listFrom = toISO(new Date(year, month, 1))
-  const listTo   = toISO(new Date(year, month + 1, 0))
+  const listFrom = listPeriodMode === 'custom' && listCustomFrom ? listCustomFrom : toISO(new Date(year, month, 1))
+  const listTo   = listPeriodMode === 'custom' && listCustomTo   ? listCustomTo   : toISO(new Date(year, month + 1, 0))
 
   function selectStatsMonth(m: number) {
     setStatsMonth(m)
@@ -286,33 +289,56 @@ export default function SalaryPage() {
   const isYesterday = view === 'stats' && statsFrom === statsTo && statsFrom === yesterdayISO
   const isFullYear  = view === 'stats' && statsMonth === null && statsFrom === toISO(new Date(statsYear, 0, 1))
 
-  const monthPicker = (
-    <div className="flex gap-0.5 flex-wrap">
-      {view === 'stats' && (
+  const listDateFilter = (
+    <div className="flex items-center gap-1.5 flex-wrap">
+      <div className="flex gap-0.5 bg-gray-100 rounded-lg p-0.5">
+        <button onClick={() => setListPeriodMode('month')}
+          className={`px-2.5 py-0.5 rounded-md text-xs font-medium transition-colors ${listPeriodMode === 'month' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
+          Месяц
+        </button>
+        <button onClick={() => setListPeriodMode('custom')}
+          className={`px-2.5 py-0.5 rounded-md text-xs font-medium transition-colors ${listPeriodMode === 'custom' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
+          Период
+        </button>
+      </div>
+      {listPeriodMode === 'month' ? (
         <>
-          <button onClick={() => { setStatsMonth(null); setStatsFrom(todayISO); setStatsTo(todayISO) }}
-            className={`px-2 py-1 rounded-lg text-xs font-medium transition-colors ${isToday ? 'bg-[#FFD600] text-black' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}>
-            Сегодня
-          </button>
-          <button onClick={() => { setStatsMonth(null); setStatsFrom(yesterdayISO); setStatsTo(yesterdayISO) }}
-            className={`px-2 py-1 rounded-lg text-xs font-medium transition-colors ${isYesterday ? 'bg-[#FFD600] text-black' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}>
-            Вчера
-          </button>
-          <button onClick={() => { setStatsMonth(null); setStatsFrom(toISO(new Date(statsYear, 0, 1))); setStatsTo(toISO(new Date(statsYear, 11, 31))) }}
-            className={`px-2 py-1 rounded-lg text-xs font-medium transition-colors ${isFullYear ? 'bg-[#FFD600] text-black' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}>
-            Весь год
-          </button>
+          <select value={year} onChange={e => setYear(+e.target.value)}
+            className="h-7 px-2 text-xs rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#FFD600]">
+            {[2025, 2026, 2027].map(y => <option key={y} value={y}>{y}</option>)}
+          </select>
+          <select value={month} onChange={e => setMonth(+e.target.value)}
+            className="h-7 px-2 text-xs rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#FFD600]">
+            {MONTH_SHORT.map((m, i) => <option key={i} value={i}>{m}</option>)}
+          </select>
+        </>
+      ) : (
+        <>
+          <input type="date" value={listCustomFrom ?? toISO(new Date(year, month, 1))} onChange={e => setListCustomFrom(e.target.value)}
+            className="h-7 px-2 text-xs rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#FFD600]"/>
+          <span className="text-xs text-gray-400">—</span>
+          <input type="date" value={listCustomTo ?? toISO(new Date(year, month + 1, 0))} onChange={e => setListCustomTo(e.target.value)}
+            className="h-7 px-2 text-xs rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#FFD600]"/>
         </>
       )}
-      {MONTH_SHORT.map((m, i) => (
-        <button key={i}
-          onClick={() => view === 'stats' ? selectStatsMonth(i) : setMonth(i)}
-          className={`px-2 py-1 rounded-lg text-xs font-medium transition-colors ${
-            (view === 'stats' ? statsMonth === i : month === i)
-              ? 'bg-[#FFD600] text-black' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
-          }`}>{m}
-        </button>
-      ))}
+    </div>
+  )
+
+  const statsDateFilter = (
+    <div className="flex items-center gap-1.5 flex-wrap">
+      <div className="flex gap-0.5 bg-gray-100 rounded-lg p-0.5">
+        {MONTH_SHORT.map((m, i) => (
+          <button key={i} onClick={() => selectStatsMonth(i)}
+            className={`px-2 py-0.5 rounded-md text-xs font-medium transition-colors ${statsMonth === i ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
+            {m}
+          </button>
+        ))}
+      </div>
+      <input type="date" value={statsFrom} onChange={e => { setStatsMonth(null); setStatsFrom(e.target.value) }}
+        className="h-7 px-2 text-xs rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#FFD600]"/>
+      <span className="text-xs text-gray-400">—</span>
+      <input type="date" value={statsTo} onChange={e => { setStatsMonth(null); setStatsTo(e.target.value) }}
+        className="h-7 px-2 text-xs rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#FFD600]"/>
     </div>
   )
 
@@ -323,11 +349,11 @@ export default function SalaryPage() {
         <div className="px-4 pt-2.5 pb-1.5 flex items-center gap-2 flex-wrap">
           <h1 className="font-semibold text-gray-900 text-sm shrink-0">ЗП и бонусы</h1>
 
-          <div className="flex gap-0.5 border border-gray-200 rounded-lg p-0.5">
+          <div className="flex gap-0.5 bg-gray-100 rounded-lg p-0.5">
             {(['list', 'stats', 'repairs'] as const).map(v => (
               <button key={v} onClick={() => setView(v)}
-                className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
-                  view === v ? 'bg-[#FFD600] text-black' : 'text-gray-500 hover:bg-gray-100'
+                className={`px-2.5 py-0.5 rounded-md text-xs font-medium transition-colors ${
+                  view === v ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
                 }`}>
                 {v === 'list' ? 'Список' : v === 'stats' ? 'Статистика' : 'Ремонты'}
               </button>
@@ -336,17 +362,17 @@ export default function SalaryPage() {
 
           {/* Year */}
           {view !== 'stats' && (
-            <div className="flex gap-0.5">
+            <div className="flex gap-0.5 bg-gray-100 rounded-lg p-0.5">
               {[2026, 2027].map(y => (
                 <button key={y} onClick={() => setYear(y)}
                   className={`px-2 py-1 rounded-lg text-xs font-medium transition-colors ${
-                    year === y ? 'bg-[#FFD600] text-black' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                    year === y ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
                   }`}>{y}</button>
               ))}
             </div>
           )}
           {view === 'stats' && (
-            <div className="flex gap-0.5">
+            <div className="flex gap-0.5 bg-gray-100 rounded-lg p-0.5">
               {[2026, 2027].map(y => (
                 <button key={y} onClick={() => selectStatsYear(y)}
                   className={`px-2 py-1 rounded-lg text-xs font-medium transition-colors ${
@@ -380,7 +406,7 @@ export default function SalaryPage() {
                 className={`px-2 py-1 text-xs rounded-lg border font-medium transition-colors ${
                   filterVmr ? 'bg-amber-100 border-amber-300 text-amber-800' : 'border-gray-200 text-gray-500 hover:bg-gray-100'
                 }`}>
-                ★ ВМР
+                ВМР
               </button>
             </>
           )}
@@ -435,20 +461,9 @@ export default function SalaryPage() {
           </div>
         </div>
 
-        {/* Month row */}
-        <div className="px-4 pb-2 flex items-center gap-2">
-          {monthPicker}
-          {view === 'stats' && (
-            <div className="flex items-center gap-1.5 ml-2">
-              <input type="date" value={statsFrom}
-                onChange={e => { setStatsMonth(null); setStatsFrom(e.target.value) }}
-                className="px-2 py-1 text-xs rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#FFD600]"/>
-              <span className="text-xs text-gray-400">—</span>
-              <input type="date" value={statsTo}
-                onChange={e => { setStatsMonth(null); setStatsTo(e.target.value) }}
-                className="px-2 py-1 text-xs rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#FFD600]"/>
-            </div>
-          )}
+        {/* Date row */}
+        <div className="px-4 pb-2">
+          {view === 'stats' ? statsDateFilter : listDateFilter}
         </div>
       </div>
 
@@ -758,7 +773,7 @@ export default function SalaryPage() {
                         <td className="px-3 py-2 text-right text-blue-700">{s.orderSalary > 0 ? fmt(s.orderSalary) : '—'}</td>
                         <td className="px-3 py-2 text-right text-blue-500">{s.salesSalary > 0 ? fmt(s.salesSalary) : '—'}</td>
                         <td className="px-3 py-2 text-right text-amber-600">{s.bonus > 0 ? fmt(s.bonus) : '—'}</td>
-                        <td className="px-3 py-2 text-right text-purple-600">{s.addon > 0 ? fmt(s.addon) : '—'}</td>
+                        <td className="px-3 py-2 text-right text-sky-600">{s.addon > 0 ? fmt(s.addon) : '—'}</td>
                         <td className="px-3 py-2 text-right text-red-400">{s.ndfl > 0 ? `−${fmt(s.ndfl)}` : '—'}</td>
                         <td className="px-3 py-2 text-right text-red-600">{s.fine > 0 ? `−${fmt(s.fine)}` : '—'}</td>
                         <td className="px-3 py-2 text-right text-orange-500">
@@ -826,7 +841,7 @@ export default function SalaryPage() {
                   <td className="px-3 py-2 text-right text-blue-700">{fmt(stats.reduce((s, r) => s + r.orderSalary, 0))}</td>
                   <td className="px-3 py-2 text-right text-blue-500">{fmt(stats.reduce((s, r) => s + r.salesSalary, 0))}</td>
                   <td className="px-3 py-2 text-right text-amber-600">{fmt(stats.reduce((s, r) => s + r.bonus, 0))}</td>
-                  <td className="px-3 py-2 text-right text-purple-600">{fmt(stats.reduce((s, r) => s + r.addon, 0))}</td>
+                  <td className="px-3 py-2 text-right text-sky-600">{fmt(stats.reduce((s, r) => s + r.addon, 0))}</td>
                   <td className="px-3 py-2 text-right text-red-400">−{fmt(stats.reduce((s, r) => s + r.ndfl, 0))}</td>
                   <td className="px-3 py-2 text-right text-red-600">−{fmt(stats.reduce((s, r) => s + r.fine, 0))}</td>
                   <td className="px-3 py-2 text-right text-orange-500">−{fmt(stats.reduce((s, r) => s + r.totalRepair, 0))}</td>

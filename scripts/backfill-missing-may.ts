@@ -5,7 +5,7 @@ import { syncOrderDetail } from '@/lib/sync/orders'
 import { syncSaleDetail } from '@/lib/sync/sales'
 
 const MAY_FROM = new Date('2026-04-30T21:00:00.000Z')
-const MAY_TO = new Date('2026-05-24T21:00:00.000Z')
+const MAY_TO = new Date('2026-05-31T20:59:59.999Z')
 const PAGE_SIZE = 100
 
 type SourceDoc = { id: string; shopId: string }

@@ -4,8 +4,9 @@ import { useState, useEffect, useCallback, Fragment } from 'react'
 import { HelpModal } from '../components/HelpModal'
 
 interface SalePosition {
-  id: string; name: string; isWork: boolean
+  id: string; name: string; isWork: boolean; isCredit: boolean; group: string | null
   price: number; soldPrice: number; count: number; purchasePriceSumm: number
+  catalogRc: number | null; margin: number | null; rcDelta: number | null; rcBonus: number
 }
 interface Sale {
   id: string
@@ -23,8 +24,10 @@ interface Sale {
   margin: number | null
   retailTotal: number
   retailDelta: number | null
-  retailPriceSold: boolean
   cashBonus: number
+  rcBonus: number
+  rcDelta: number | null
+  hasCredit: boolean
   positions: SalePosition[]
 }
 interface Summary {
@@ -34,9 +37,10 @@ interface Summary {
   refund: number
   margin: number
   cashBonus: number
+  rcBonus: number
   withMargin: number
   withoutPositions: number
-  retailPriceSold: number
+  withCredit: number
   returns: number
   count: number
 }
@@ -62,13 +66,14 @@ const HELP_ITEMS = [
   { label: 'Синхронизация', desc: 'Продажи обновляются из LiveSklad по расписанию каждые 15 минут.' },
   { label: 'Период', desc: 'Фильтрация ведётся по дате продажи.' },
   { label: 'Маржа', desc: 'Маржа = выручка − себестоимость позиций. Считается только по продажам с загруженными позициями.' },
+  { label: 'Кредит', desc: 'Позиция-товар с нулевой или отрицательной выручкой при наличии себестоимости — кредит. Весь чек помечается как кредитный; смартфонные позиции из каталога в нём тоже получают метку. Маржа по кредитным позициям с ненулевой выручкой = цена − каталожная РЦ.' },
+  { label: 'РЦ-бонус', desc: 'По аксессуарам из каталога: если (цена − РЦ) × кол-во ≥ 1 000 ₽, бонус = 50% от разницы.' },
   { label: 'Бонус за наличность', desc: 'Создаётся авто-бонус 2,5% от маржи, если продажа оплачена только наличными.' },
-  { label: 'По РЦ', desc: 'Продажа по розничной цене — продажа без скидки относительно прайса.' },
 ]
 
 export default function SalesPage() {
   const now = new Date()
-  const emptySummary: Summary = { revenue: 0, cashMoney: 0, cashBank: 0, refund: 0, margin: 0, cashBonus: 0, withMargin: 0, withoutPositions: 0, retailPriceSold: 0, returns: 0, count: 0 }
+  const emptySummary: Summary = { revenue: 0, cashMoney: 0, cashBank: 0, refund: 0, margin: 0, cashBonus: 0, rcBonus: 0, withMargin: 0, withoutPositions: 0, withCredit: 0, returns: 0, count: 0 }
 
   const [session,      setSession]      = useState<Session | null>(null)
   const [sales,        setSales]        = useState<Sale[]>([])
@@ -93,7 +98,9 @@ export default function SalesPage() {
   const [seller,      setSeller]      = useState('')
   const [shop,        setShop]        = useState('')
   const [paymentType, setPaymentType] = useState('')
-  const [positionMode, setPositionMode] = useState<'all' | 'with' | 'without'>('all')
+  const [positionMode,  setPositionMode]  = useState<'all' | 'with' | 'without'>('all')
+  const [rcBonusMode,   setRcBonusMode]   = useState<'all' | 'only'>('all')
+  const [creditMode,    setCreditMode]    = useState<'all' | 'only'>('all')
 
   const todayISO     = toISO(new Date())
   const yesterdayISO = toISO(new Date(Date.now() - 86400000))
@@ -123,6 +130,8 @@ export default function SalesPage() {
         ...(shop        && { shop }),
         ...(paymentType && { paymentType }),
         positionMode,
+        rcBonusMode,
+        creditMode,
       })
       const res = await fetch(`/api/sales?${params}`)
       if (res.ok) {
@@ -138,10 +147,10 @@ export default function SalesPage() {
     } finally {
       setLoading(false)
     }
-  }, [from, to, page, search, seller, shop, paymentType, positionMode])
+  }, [from, to, page, search, seller, shop, paymentType, positionMode, rcBonusMode, creditMode])
 
   useEffect(() => { load() }, [load])
-  useEffect(() => { setPage(1); setExpanded(new Set()) }, [from, to, search, seller, shop, paymentType, positionMode])
+  useEffect(() => { setPage(1); setExpanded(new Set()) }, [from, to, search, seller, shop, paymentType, positionMode, rcBonusMode, creditMode])
 
   function selectQuickPeriod(mode: 'month' | 'today' | 'yesterday') {
     setPeriodMode(mode); setCustomFrom(null); setCustomTo(null); setPage(1)
@@ -237,32 +246,24 @@ export default function SalesPage() {
         {/* Ряд 3: фильтры */}
         <div className="bg-gray-50 rounded-lg px-2 py-1.5">
           <div className="flex items-center gap-1.5 flex-wrap">
-            <select value={seller} onChange={e => { setSeller(e.target.value); setPage(1) }}
-              className="h-7 px-2 text-xs rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#FFD600] max-w-[140px]">
-              <option value="">Продавец</option>
-              {sellers.map(s => <option key={s} value={s}>{s}</option>)}
-            </select>
-
-            {isAdmin && (
-              <select value={shop} onChange={e => { setShop(e.target.value); setPage(1) }}
-                className="h-7 px-2 text-xs rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#FFD600] max-w-[140px]">
-                <option value="">Салон</option>
-                {shops.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-              </select>
-            )}
-
-            <select value={paymentType} onChange={e => { setPaymentType(e.target.value); setPage(1) }}
-              className="h-7 px-2 text-xs rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#FFD600] max-w-[130px]">
-              <option value="">Оплата</option>
-              {paymentTypes.map(p => <option key={p} value={p}>{p}</option>)}
-            </select>
-
             <select value={positionMode} onChange={e => { setPositionMode(e.target.value as typeof positionMode); setPage(1) }}
               className="h-7 px-2 text-xs rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#FFD600] max-w-[130px]">
-              <option value="all">Позиции</option>
+              <option value="all">Любые позиции</option>
               <option value="with">С позициями</option>
               <option value="without">Без позиций</option>
             </select>
+            <button onClick={() => { setRcBonusMode(m => m === 'only' ? 'all' : 'only'); setPage(1) }}
+              className={`h-7 px-2.5 text-xs rounded-lg font-medium transition-colors ${
+                rcBonusMode === 'only' ? 'bg-gray-700 text-white' : 'bg-white border border-gray-200 text-gray-500 hover:text-gray-700'
+              }`}>
+              Бонус РЦ
+            </button>
+            <button onClick={() => { setCreditMode(m => m === 'only' ? 'all' : 'only'); setPage(1) }}
+              className={`h-7 px-2.5 text-xs rounded-lg font-medium transition-colors ${
+                creditMode === 'only' ? 'bg-rose-600 text-white' : 'bg-white border border-gray-200 text-gray-500 hover:text-gray-700'
+              }`}>
+              Кредит
+            </button>
           </div>
         </div>
       </div>
@@ -279,7 +280,8 @@ export default function SalesPage() {
               { label: 'Нал',         value: fmtMoney(summary.cashMoney),         color: 'text-gray-700' },
               { label: 'Безнал',      value: fmtMoney(summary.cashBank),          color: 'text-gray-700' },
               { label: 'Бонус нал',   value: fmtMoney(summary.cashBonus),         color: 'text-emerald-700' },
-              { label: 'По РЦ',       value: String(summary.retailPriceSold),     color: 'text-amber-600' },
+              { label: 'Бонус РЦ',    value: fmtMoney(summary.rcBonus),           color: 'text-amber-700' },
+
             ].map(k => (
               <div key={k.label} className="bg-white border border-gray-100 rounded-lg px-2.5 py-2 shadow-sm">
                 <p className="text-[10px] text-gray-400">{k.label}</p>
@@ -303,7 +305,7 @@ export default function SalesPage() {
                 <th className="px-2 py-2.5 font-medium text-gray-500 w-6"></th>
                 <th className="px-2 py-2.5 font-medium text-gray-500 w-16">Дата</th>
                 <th className="px-2 py-2.5 font-medium text-gray-500 w-24">Номер</th>
-                <th className="px-2 py-1.5 font-medium text-gray-500">
+                <th className="px-2 py-1.5 font-medium text-gray-500 w-28">
                   {isAdmin ? (
                     <select value={seller} onChange={e => { setSeller(e.target.value); setPage(1) }}
                       onClick={e => e.stopPropagation()}
@@ -333,7 +335,7 @@ export default function SalesPage() {
                 </th>
                 <th className="px-2 py-2.5 font-medium text-gray-500 w-24 text-right">Итого</th>
                 <th className="px-2 py-2.5 font-medium text-gray-500 w-24 text-right">Маржа</th>
-                <th className="px-2 py-2.5 font-medium text-gray-500 w-24 text-right">Бонусы</th>
+                <th className="px-2 py-2.5 font-medium text-gray-500 w-28 text-right">Бонусы</th>
               </tr>
             </thead>
             <tbody>
@@ -353,11 +355,12 @@ export default function SalesPage() {
                         {isOpen ? '▾' : '▸'}
                       </td>
                       <td className="px-2 py-2 text-gray-400">{fmtDate(s.date)}</td>
-                      <td className="px-2 py-2 text-gray-500 font-mono">{s.number ?? '—'}</td>
-                      <td className="px-2 py-2 text-gray-600">
-                        {s.sellerName
-                          ? <span className="px-1.5 py-0.5 bg-blue-50 text-blue-700 rounded text-[10px] font-medium">{s.sellerName}</span>
-                          : <span className="text-gray-300">—</span>}
+                      <td className="px-2 py-2 text-gray-500 font-mono">
+                        {s.number ?? '—'}
+                        {s.hasCredit && <div className="text-[10px] text-rose-500 font-medium mt-0.5">Кредит</div>}
+                      </td>
+                      <td className="px-2 py-2 text-gray-600 truncate max-w-[112px]">
+                        {s.sellerName ?? <span className="text-gray-300">—</span>}
                       </td>
                       {isAdmin && <td className="px-2 py-2 text-gray-500 max-w-[112px] truncate">{s.shop.name}</td>}
                       <td className="px-2 py-2 text-gray-500">
@@ -374,12 +377,24 @@ export default function SalesPage() {
                       </td>
                       <td className={`px-2 py-2 text-right font-semibold ${margin === null ? 'text-gray-300' : margin >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
                         {margin === null ? '—' : fmtMoney(margin)}
-                        {s.retailPriceSold && <div className="text-[10px] text-amber-600 font-normal">РЦ</div>}
                       </td>
-                      <td className="px-2 py-2 text-right">
-                        {s.cashBonus > 0
-                          ? <span className="text-[10px] text-emerald-700 bg-emerald-50 rounded px-1.5 py-0.5 whitespace-nowrap">Нал +{fmtMoney(s.cashBonus)}</span>
-                          : <span className="text-gray-300">—</span>}
+                      <td className="px-2 py-2 text-right align-top">
+                        {(s.cashBonus > 0 || s.rcBonus > 0) ? (
+                          <div className="flex flex-col items-end gap-0.5 text-[10px] leading-tight font-medium">
+                            {s.cashBonus > 0 && (
+                              <span className="whitespace-nowrap rounded bg-emerald-50 text-emerald-700 px-1.5 py-0.5">
+                                Нал +{fmtMoney(s.cashBonus)}
+                              </span>
+                            )}
+                            {s.rcBonus > 0 && (
+                              <span className="whitespace-nowrap rounded bg-amber-50 text-amber-700 px-1.5 py-0.5">
+                                РЦ +{fmtMoney(s.rcBonus)}
+                              </span>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="text-gray-300">—</span>
+                        )}
                       </td>
                     </tr>
 
@@ -390,30 +405,49 @@ export default function SalesPage() {
                             <p className="text-xs text-gray-400">Позиции не загружены</p>
                           ) : (
                             <div className="max-w-xl">
-                              <table className="w-full min-w-[620px] text-xs mb-2">
+                              <table className="w-full min-w-[820px] text-xs mb-2">
                                 <thead>
                                   <tr className="text-gray-400 border-b border-gray-200">
                                     <th className="text-left py-1 font-medium">Наименование</th>
                                     <th className="text-left py-1 font-medium w-16">Тип</th>
                                     <th className="text-right py-1 font-medium w-8">Кол.</th>
-                                    <th className="text-right py-1 font-medium w-24">РЦ</th>
+                                    <th className="text-right py-1 font-medium w-24">Каталог РЦ</th>
                                     <th className="text-right py-1 font-medium w-24">Продано</th>
                                     <th className="text-right py-1 font-medium w-24">Себест.</th>
+                                    <th className="text-right py-1 font-medium w-24">Маржа</th>
+                                    <th className="text-right py-1 font-medium w-24">Бонус РЦ</th>
                                   </tr>
                                 </thead>
                                 <tbody>
                                   {s.positions.map(p => (
-                                    <tr key={p.id} className="border-b border-gray-100">
-                                      <td className="py-1.5 text-gray-800">{p.name}</td>
-                                      <td className="py-1.5">
-                                        <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${p.isWork ? 'bg-blue-50 text-blue-600' : 'bg-orange-50 text-orange-600'}`}>
-                                          {p.isWork ? 'Услуга' : 'Товар'}
-                                        </span>
+                                    <tr key={p.id} className={`border-b border-gray-100 ${p.isCredit ? 'bg-rose-50/40' : ''}`}>
+                                      <td className="py-1.5 text-gray-800">
+                                        {p.name}
+                                        {p.group && <div className="text-[10px] text-gray-400 mt-0.5">{p.group}</div>}
                                       </td>
-                                      <td className="py-1.5 text-right text-gray-500">{p.count}</td>
-                                      <td className="py-1.5 text-right text-gray-400">{fmtMoney(p.price * p.count)}</td>
-                                      <td className="py-1.5 text-right text-gray-700">{fmtMoney(p.soldPrice * p.count)}</td>
+                                      <td className="py-1.5">
+                                        {p.isCredit ? (
+                                          <span className="text-[10px] px-1.5 py-0.5 rounded font-medium bg-rose-50 text-rose-600">Кредит</span>
+                                        ) : (
+                                          <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${p.isWork ? 'bg-blue-50 text-blue-600' : 'bg-orange-50 text-orange-600'}`}>
+                                            {p.isWork ? 'Услуга' : 'Товар'}
+                                          </span>
+                                        )}
+                                      </td>
+                                      <td className={`py-1.5 text-right ${p.isCredit ? 'text-rose-500 font-medium' : 'text-gray-500'}`}>{p.count}</td>
+                                      <td className="py-1.5 text-right text-gray-400">
+                                        {!p.isCredit && p.catalogRc !== null ? fmtMoney(p.catalogRc * p.count) : '—'}
+                                      </td>
+                                      <td className={`py-1.5 text-right ${p.isCredit ? 'text-rose-500 font-medium' : 'text-gray-700'}`}>{fmtMoney(p.soldPrice * p.count)}</td>
                                       <td className="py-1.5 text-right text-gray-400">{p.purchasePriceSumm > 0 ? fmtMoney(p.purchasePriceSumm) : '—'}</td>
+                                      <td className={`py-1.5 text-right font-medium ${p.isCredit ? 'text-gray-300' : p.margin === null ? 'text-gray-300' : p.margin >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
+                                        {p.isCredit ? '—' : p.margin === null ? '—' : fmtMoney(p.margin)}
+                                      </td>
+                                      <td className="py-1.5 text-right">
+                                        {p.rcBonus > 0
+                                          ? <span className="text-[10px] rounded bg-amber-50 text-amber-700 px-1.5 py-0.5 font-medium whitespace-nowrap">+{fmtMoney(p.rcBonus)}</span>
+                                          : <span className="text-gray-300">—</span>}
+                                      </td>
                                     </tr>
                                   ))}
                                 </tbody>
@@ -421,10 +455,12 @@ export default function SalesPage() {
                                   <tfoot>
                                     <tr className="border-t border-gray-200">
                                       <td colSpan={4} className="pt-1.5 text-gray-500 font-medium">Итого</td>
+                                      <td className="pt-1.5"></td>
                                       <td className="pt-1.5 text-right text-gray-500">{fmtMoney(costTotal)}</td>
                                       <td className={`pt-1.5 text-right font-bold ${margin >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
                                         {fmtMoney(margin)}
                                       </td>
+                                      <td className="pt-1.5"></td>
                                     </tr>
                                   </tfoot>
                                 )}

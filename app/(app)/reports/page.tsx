@@ -1,6 +1,16 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
+import { HelpModal } from '../components/HelpModal'
+
+const HELP_ITEMS = [
+  { label: 'Назначение', desc: 'Сводная аналитика по заказам за выбранный месяц: выручка, маржа, ВМР, средний чек, статистика по менеджерам и салонам.' },
+  { label: 'Источник', desc: 'Данные из локальной БД, которые попадают туда через синхронизацию LiveSklad каждые 15 минут.' },
+  { label: 'Период', desc: 'Выбери год и месяц. Данные фильтруются по дате выдачи заказа (dateClose).' },
+  { label: 'Маржа', desc: 'Маржа = выручка минус себестоимость позиций. Возвраты и удалённые заказы не участвуют.' },
+  { label: 'ВМР', desc: 'Высокомаржинальный ремонт — заказ с маржей от 4 000 ₽. Считается отдельно в KPI.' },
+  { label: 'Тепловая карта', desc: 'Таблица «По дням» показывает выручку или маржу каждого салона за каждый день. Цвет ячейки — интенсивность относительно максимума за период.' },
+]
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer,
@@ -72,6 +82,7 @@ export default function ReportsPage() {
   const [mainTab,      setMainTab]      = useState<'chart' | 'table'>('chart')
   const [chartMetric,  setChartMetric]  = useState<'revenue' | 'margin'>('revenue')
   const [pivotMetric,  setPivotMetric]  = useState<'revenue' | 'margin'>('revenue')
+  const [showHelp,     setShowHelp]     = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -101,23 +112,33 @@ export default function ReportsPage() {
   return (
     <div className="flex flex-col h-[calc(100dvh-8.5rem)] overflow-hidden bg-white md:h-screen">
       {/* Шапка */}
-      <div className="shrink-0 flex items-center gap-3 px-4 py-3 border-b border-gray-100 bg-white flex-wrap">
-        <span className="text-sm font-semibold text-gray-900">Отчёты</span>
-        <div className="flex items-center gap-1 ml-auto">
-          {AVAILABLE_YEARS.map(y => (
-            <button key={y} onClick={() => setYear(y)}
-              className={`px-3 py-1 rounded-lg text-sm font-medium ${year === y ? 'bg-[#FFD600] text-black' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
-              {y}
+      <div className="shrink-0 border-b border-gray-100 px-4 pt-2.5 pb-2">
+        <div className="flex items-center gap-2 pb-2">
+          <h1 className="font-semibold text-gray-900 text-sm shrink-0">Отчёты</h1>
+          <div className="ml-auto">
+            <button onClick={() => setShowHelp(true)} title="Справка"
+              className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors">
+              <svg width="15" height="15" viewBox="0 0 15 15" fill="none"><circle cx="7.5" cy="7.5" r="6" stroke="currentColor" strokeWidth="1.4"/><path d="M6 5.8C6 4.8 7.5 4.5 7.5 5.8c0 .8-1 1-1 2" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/><circle cx="7.5" cy="10.5" r=".6" fill="currentColor"/></svg>
             </button>
-          ))}
+          </div>
         </div>
-        <div className="flex items-center gap-1">
-          {MONTH_SHORT.map((m, i) => (
-            <button key={i} onClick={() => setMonth(i)}
-              className={`px-2 py-1 rounded-lg text-xs font-medium ${month === i ? 'bg-[#FFD600] text-black' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}>
-              {m}
-            </button>
-          ))}
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <div className="flex gap-0.5 bg-gray-100 rounded-lg p-0.5">
+            {AVAILABLE_YEARS.map(y => (
+              <button key={y} onClick={() => setYear(y)}
+                className={`px-2.5 py-0.5 rounded-md text-xs font-medium transition-colors ${year === y ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
+                {y}
+              </button>
+            ))}
+          </div>
+          <div className="flex gap-0.5 bg-gray-100 rounded-lg p-0.5">
+            {MONTH_SHORT.map((m, i) => (
+              <button key={i} onClick={() => setMonth(i)}
+                className={`px-2 py-0.5 rounded-md text-xs font-medium transition-colors ${month === i ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
+                {m}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
@@ -459,6 +480,15 @@ export default function ReportsPage() {
           )}
 
         </div>
+      )}
+      {showHelp && (
+        <HelpModal
+          title="Отчёты — справка"
+          color="bg-indigo-50 border-indigo-100"
+          dot="bg-indigo-400"
+          items={HELP_ITEMS}
+          onClose={() => setShowHelp(false)}
+        />
       )}
     </div>
   )

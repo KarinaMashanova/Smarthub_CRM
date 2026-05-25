@@ -5,8 +5,6 @@ name: Smarthub Sync Cron
 # — каждый запуск перекрывает пропущенный промежуток. Минуты смещены от :00.
 # workflow_dispatch позволяет запустить вручную если нужно.
 on:
-  schedule:
-    - cron: '7,22,37,52 * * * *'
   workflow_dispatch:
 
 jobs:

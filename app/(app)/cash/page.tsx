@@ -1,40 +1,43 @@
 'use client'
 
 import { useState, useEffect, useCallback, useMemo } from 'react'
+import { HelpModal } from '../components/HelpModal'
+
+const HELP_ITEMS = [
+  { label: 'Назначение', desc: 'Раздел фиксирует ручные доходы и расходы по каждому салону. Выручка из заказов и продаж подтягивается автоматически.' },
+  { label: 'Период', desc: 'Выбери Сегодня, Вчера, конкретный Месяц или произвольный Период. Администратор может фильтровать по салону.' },
+  { label: 'Операции', desc: 'Типы операций зависят от роли и направления (приход/расход). Если нужного типа нет в списке — выбери «Другое…» и введи свой.' },
+  { label: 'Роли', desc: 'Администратор добавляет записи для любого салона. Менеджер — только в свой салон и с ограниченным набором типов.' },
+  { label: 'Метод оплаты', desc: 'Наличные / Терминал / Перевод. Влияет только на отображение, не на расчёт итогов.' },
+  { label: 'Результат', desc: 'Итог = Заказы + Продажи + ручные приходы − ручные расходы. Отображается по каждому салону и суммарно сверху.' },
+]
 
 interface Session { name: string; role: 'MANAGER' | 'ADMIN'; shopId: string | null }
 interface Shop    { id: string; name: string }
 interface CashEntry {
   id: number; date: string; type: string; payMethod: string
   isIncome: boolean; amount: number; comment: string | null
-  authorName: string; shopId: string; shop: { name: string }
+  authorName: string; authorRole: string | null; linkedName: string | null
+  shopId: string; shop: { name: string }
+  source?: 'MANUAL' | 'SALARY'
 }
-type Revenue = Record<string, { orders: number; salesNal: number; salesBeznal: number }>
+type Revenue = Record<string, { orders: number; sales: number }>
 
 const PAY_METHODS = { CASH: 'Наличные', CARD: 'Терминал', TRANSFER: 'Перевод' }
 const MONTHS = ['Январь','Февраль','Март','Апрель','Май','Июнь','Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь']
 const YEARS  = [2024, 2025, 2026]
 
-const ADMIN_TYPES_INCOME  = ['Прочий доход', 'Возврат от поставщика']
+const ADMIN_TYPES_INCOME  = ['Прочий доход', 'Возврат от поставщика', '__custom__']
 const ADMIN_TYPES_EXPENSE = [
   'Реклама', 'Интернет / Видеонаблюдение', 'Закупка товаров',
   'Займы и кредиты', 'Аренда', 'Комиссия банка / Эквайринг',
   'Ремонт и обслуживание', 'Транспортные расходы',
-  'Штрафы / Налоги', 'Выплата зарплаты', 'Прочий расход',
+  'Штрафы / Налоги', 'Выплата зарплаты', 'Прочий расход', '__custom__',
 ]
-const MANAGER_TYPES_INCOME  = ['Внесение в кассу']
-const MANAGER_TYPES_EXPENSE = ['Расход из кассы', 'Инкассация', 'Выплата зарплаты', 'Прочий расход']
+const MANAGER_TYPES_INCOME  = ['Внесение в кассу', '__custom__']
+const MANAGER_TYPES_EXPENSE = ['Расход из кассы', 'Инкассация', 'Выплата зарплаты', 'Прочий расход', '__custom__']
 
-const TYPE_COLORS: Record<string, string> = {
-  'Реклама':                    'bg-pink-50 text-pink-700',
-  'Интернет / Видеонаблюдение': 'bg-blue-50 text-blue-700',
-  'Закупка товаров':            'bg-orange-50 text-orange-700',
-  'Займы и кредиты':            'bg-red-50 text-red-700',
-  'Аренда':                     'bg-purple-50 text-purple-700',
-  'Выплата зарплаты':           'bg-green-50 text-green-700',
-  'Инкассация':                 'bg-indigo-50 text-indigo-700',
-  'Внесение в кассу':           'bg-emerald-50 text-emerald-700',
-}
+const TYPE_COLORS: Record<string, string> = {}
 
 function toISO(d: Date) {
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
@@ -52,10 +55,13 @@ export default function CashPage() {
   const [revenue, setRevenue] = useState<Revenue>({})
   const [loading, setLoading] = useState(true)
 
-  // Дата: сегодня или месяц
-  const [mode,     setMode]     = useState<'today' | 'month'>('today')
-  const [selYear,  setSelYear]  = useState(() => new Date().getFullYear())
-  const [selMonth, setSelMonth] = useState(() => new Date().getMonth())
+  // Дата
+  const now = new Date()
+  const [periodMode, setPeriodMode] = useState<'month' | 'today' | 'yesterday' | 'custom'>('today')
+  const [selYear,    setSelYear]    = useState(() => new Date().getFullYear())
+  const [selMonth,   setSelMonth]   = useState(() => new Date().getMonth())
+  const [customFrom, setCustomFrom] = useState<string | null>(null)
+  const [customTo,   setCustomTo]   = useState<string | null>(null)
 
   // Фильтр по салону (admin)
   const [filterShopId, setFilterShopId] = useState('')
@@ -64,22 +70,30 @@ export default function CashPage() {
   const [showAdd,      setShowAdd]      = useState(false)
   const [isIncome,     setIsIncome]     = useState(false)
   const [entryType,    setEntryType]    = useState('')
+  const [customType,   setCustomType]   = useState('')
   const [payMethod,    setPayMethod]    = useState<'CASH'|'CARD'|'TRANSFER'>('CASH')
   const [amount,       setAmount]       = useState('')
   const [comment,      setComment]      = useState('')
   const [modalShopId,  setModalShopId]  = useState('')
   const [entryDate,    setEntryDate]    = useState(() => toISO(new Date()))
-  const [saving,       setSaving]       = useState(false)
+  const [saving,         setSaving]       = useState(false)
+  const [addError,       setAddError]     = useState('')
+  const [showHelp,       setShowHelp]     = useState(false)
+  const [showSalary,     setShowSalary]   = useState(true)
+  const [collapsedShops, setCollapsedShops] = useState<Set<string>>(new Set())
 
-  const { from, to } = useMemo(() => {
-    if (mode === 'today') {
-      const d = toISO(new Date())
-      return { from: d, to: d }
-    }
-    const f = new Date(selYear, selMonth, 1)
-    const t = new Date(selYear, selMonth + 1, 0)
-    return { from: toISO(f), to: toISO(t) }
-  }, [mode, selYear, selMonth])
+  const todayISO     = toISO(new Date())
+  const yesterdayISO = toISO(new Date(Date.now() - 86400000))
+  const monthFrom    = toISO(new Date(selYear, selMonth, 1))
+  const monthTo      = toISO(new Date(selYear, selMonth + 1, 0))
+  const from = periodMode === 'today'     ? todayISO
+             : periodMode === 'yesterday' ? yesterdayISO
+             : periodMode === 'custom'    ? (customFrom ?? todayISO)
+             : monthFrom
+  const to   = periodMode === 'today'     ? todayISO
+             : periodMode === 'yesterday' ? yesterdayISO
+             : periodMode === 'custom'    ? (customTo ?? todayISO)
+             : monthTo
 
   useEffect(() => {
     fetch('/api/auth/me').then(r => r.ok ? r.json() : null).then(setSession)
@@ -137,33 +151,45 @@ export default function CashPage() {
 
   // Общие итоги
   const totals = useMemo(() => {
-    let revOrders = 0, salesNal = 0, salesBeznal = 0, expenses = 0, incManual = 0
+    let revOrders = 0, revSales = 0, expenses = 0, incManual = 0, salaryPaid = 0, fines = 0
     for (const sid of visibleShopIds) {
       const rev = revenue[sid]
-      if (rev) { revOrders += rev.orders; salesNal += rev.salesNal; salesBeznal += rev.salesBeznal }
+      if (rev) { revOrders += rev.orders; revSales += rev.sales }
       for (const e of byShop[sid]?.entries ?? []) {
-        if (e.isIncome) incManual += e.amount
-        else            expenses  += e.amount
+        if (e.source === 'SALARY') {
+          if (e.isIncome) fines      += e.amount  // штраф = приход в кассу
+          else            salaryPaid += e.amount  // выплата ЗП = расход
+        } else {
+          if (e.isIncome) incManual += e.amount
+          else            expenses  += e.amount
+        }
       }
     }
-    const totalRev = revOrders + salesNal + salesBeznal + incManual
-    return { revOrders, salesNal, salesBeznal, incManual, expenses, totalRev, net: totalRev - expenses }
+    const totalRev = revOrders + revSales + incManual + fines
+    return { revOrders, revSales, incManual, expenses, salaryPaid, fines, totalRev, net: totalRev - expenses - salaryPaid }
   }, [visibleShopIds, revenue, byShop])
 
   async function submitEntry() {
-    if (!entryType || !amount) return
+    const finalType = entryType === '__custom__' ? customType.trim() : entryType
+    if (!finalType || !amount) return
+    setAddError('')
     setSaving(true)
     try {
       const sid = isAdmin ? modalShopId : (session?.shopId ?? '')
       const res = await fetch('/api/cash', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ type: entryType, payMethod, isIncome, amount: parseFloat(amount), comment, shopId: sid, date: entryDate }),
+        body: JSON.stringify({ type: finalType, payMethod, isIncome, amount: parseFloat(amount), comment, shopId: sid, date: entryDate }),
       })
       if (res.ok) {
         setShowAdd(false); setAmount(''); setComment(''); setEntryType('')
         load()
+      } else {
+        const body = await res.json().catch(() => ({}))
+        setAddError(body.error ?? `Ошибка ${res.status}`)
       }
+    } catch (e) {
+      setAddError('Нет соединения')
     } finally { setSaving(false) }
   }
 
@@ -174,7 +200,7 @@ export default function CashPage() {
   }
 
   function openAdd(presetShopId?: string) {
-    setIsIncome(false); setEntryType(''); setAmount(''); setComment('')
+    setIsIncome(false); setEntryType(''); setCustomType(''); setAmount(''); setComment(''); setAddError('')
     setModalShopId(presetShopId ?? (filterShopId || shops[0]?.id || ''))
     setEntryDate(toISO(new Date())); setShowAdd(true)
   }
@@ -184,54 +210,76 @@ export default function CashPage() {
   return (
     <div className="flex flex-col h-[calc(100dvh-8.5rem)] overflow-hidden bg-white md:h-screen">
       {/* Шапка */}
-      <div className="shrink-0 px-4 py-3 border-b border-gray-100 bg-white flex items-center gap-3 flex-wrap">
-        <span className="text-sm font-semibold text-gray-900">Касса</span>
-
-        {endOfDay && (
-          <span className="text-xs bg-amber-50 text-amber-700 border border-amber-200 px-2 py-0.5 rounded-full">
-            🔔 Не забудьте сверить кассу
-          </span>
-        )}
-
-        <div className="flex items-center gap-2 ml-auto flex-wrap">
-          {/* Переключатель сегодня / месяц */}
-          <div className="flex bg-gray-100 rounded-lg p-0.5 gap-0.5">
-            <button onClick={() => setMode('today')}
-              className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${mode === 'today' ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
-              Сегодня
+      <div className="shrink-0 border-b border-gray-100 px-4 pt-2.5 pb-2">
+        <div className="flex items-center gap-2 pb-2 flex-wrap">
+          <h1 className="font-semibold text-gray-900 text-sm shrink-0">Касса</h1>
+          {endOfDay && (
+            <span className="text-xs bg-amber-50 text-amber-700 border border-amber-200 px-2 py-0.5 rounded-full">
+              Не забудьте сверить кассу
+            </span>
+          )}
+          <div className="ml-auto flex items-center gap-2">
+            {isAdmin && shops.length > 0 && (
+              <select value={filterShopId} onChange={e => setFilterShopId(e.target.value)}
+                className="h-7 px-2 text-xs rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#FFD600]">
+                <option value="">Все салоны</option>
+                {shops.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+              </select>
+            )}
+            <button onClick={() => setShowSalary(v => !v)} title={showSalary ? 'Скрыть ЗП/штрафы' : 'Показать ЗП/штрафы'}
+              className={`h-7 px-2.5 text-xs rounded-lg border transition-colors font-medium ${showSalary ? 'border-gray-200 text-gray-500 hover:bg-gray-50' : 'border-gray-300 bg-gray-100 text-gray-700'}`}>
+              ЗП
             </button>
-            <button onClick={() => setMode('month')}
-              className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${mode === 'month' ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
-              Месяц
+            <button onClick={() => setShowHelp(true)} title="Справка"
+              className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors">
+              <svg width="15" height="15" viewBox="0 0 15 15" fill="none"><circle cx="7.5" cy="7.5" r="6" stroke="currentColor" strokeWidth="1.4"/><path d="M6 5.8C6 4.8 7.5 4.5 7.5 5.8c0 .8-1 1-1 2" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/><circle cx="7.5" cy="10.5" r=".6" fill="currentColor"/></svg>
+            </button>
+            <button onClick={() => openAdd()}
+              className="h-7 px-3 text-xs rounded-lg bg-[#FFD600] text-black hover:bg-[#FFCA00] font-medium whitespace-nowrap">
+              + Добавить
             </button>
           </div>
+        </div>
 
-          {mode === 'month' && (
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <div className="flex gap-0.5 bg-gray-100 rounded-lg p-0.5">
+            {([['month','Месяц'],['today','Сегодня'],['yesterday','Вчера'],['custom','Период']] as const).map(([mode, label]) => (
+              <button key={mode} onClick={() => {
+                if (mode === 'custom') { setPeriodMode('custom'); setCustomFrom(from); setCustomTo(to) }
+                else setPeriodMode(mode)
+              }}
+                className={`px-2.5 py-0.5 rounded-md text-xs font-medium transition-colors ${
+                  periodMode === mode ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+                }`}>
+                {label}
+              </button>
+            ))}
+          </div>
+
+          {periodMode === 'month' ? (
             <>
-              <select value={selMonth} onChange={e => setSelMonth(+e.target.value)}
-                className="text-xs border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none bg-white">
-                {MONTHS.map((m, i) => <option key={i} value={i}>{m}</option>)}
-              </select>
               <select value={selYear} onChange={e => setSelYear(+e.target.value)}
-                className="text-xs border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none bg-white">
+                className="h-7 px-2 text-xs rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#FFD600]">
                 {YEARS.map(y => <option key={y} value={y}>{y}</option>)}
               </select>
+              <select value={selMonth} onChange={e => setSelMonth(+e.target.value)}
+                className="h-7 px-2 text-xs rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#FFD600]">
+                {MONTHS.map((m, i) => <option key={i} value={i}>{m}</option>)}
+              </select>
             </>
+          ) : periodMode === 'custom' ? (
+            <>
+              <input type="date" value={customFrom ?? todayISO} onChange={e => { setPeriodMode('custom'); setCustomFrom(e.target.value) }}
+                className="h-7 px-2 text-xs rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#FFD600]"/>
+              <span className="text-xs text-gray-400">—</span>
+              <input type="date" value={customTo ?? todayISO} onChange={e => { setPeriodMode('custom'); setCustomTo(e.target.value) }}
+                className="h-7 px-2 text-xs rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#FFD600]"/>
+            </>
+          ) : (
+            <span className="px-2 py-1 rounded-lg text-xs font-medium bg-gray-100 text-gray-500">
+              {periodMode === 'today' ? todayISO : yesterdayISO}
+            </span>
           )}
-
-          {/* Фильтр по салону (admin) */}
-          {isAdmin && shops.length > 0 && (
-            <select value={filterShopId} onChange={e => setFilterShopId(e.target.value)}
-              className="text-xs border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none bg-white">
-              <option value="">Все салоны</option>
-              {shops.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-            </select>
-          )}
-
-          <button onClick={() => openAdd()}
-            className="text-xs px-3 py-1.5 rounded-lg bg-[#FFD600] text-black hover:bg-[#FFCA00] font-medium whitespace-nowrap">
-            + Добавить
-          </button>
         </div>
       </div>
 
@@ -241,23 +289,43 @@ export default function CashPage() {
         <div className="flex-1 overflow-y-auto p-4 space-y-4">
 
           {/* Общие итоги */}
-          <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-            <BalCard label="Заказы"         value={totals.revOrders}   color="text-emerald-600" />
-            <BalCard label="Продажи нал"    value={totals.salesNal}    color="text-emerald-500" />
-            <BalCard label="Продажи безнал" value={totals.salesBeznal} color="text-blue-600" />
-            <BalCard label="Расходы"        value={totals.expenses}    color="text-red-500" />
-            <BalCard label="Результат"      value={totals.net}         color={totals.net >= 0 ? 'text-gray-900' : 'text-red-600'} bold />
+          <div className="bg-gray-50 rounded-xl px-3 py-2 flex items-center gap-x-4 gap-y-1 flex-wrap text-xs">
+            {[
+              { label: 'Заказы',    val: totals.revOrders,  plus: true  },
+              { label: 'Продажи',   val: totals.revSales,   plus: true  },
+              { label: 'Расходы',   val: totals.expenses,   plus: false },
+              ...(totals.salaryPaid > 0 ? [{ label: 'ЗП',      val: totals.salaryPaid, plus: false }] : []),
+              ...(totals.fines      > 0 ? [{ label: 'Штрафы',  val: totals.fines,      plus: true  }] : []),
+            ].map(({ label, val, plus }) => val > 0 ? (
+              <span key={label} className="text-gray-500">
+                {label} <span className={`font-semibold ${plus ? 'text-green-600' : 'text-red-500'}`}>
+                  {plus ? '+' : '−'}{fmt(val)}
+                </span>
+              </span>
+            ) : null)}
+            <span className="ml-auto pl-3 border-l border-gray-200 text-gray-500">
+              Прибыль{' '}
+              <span className={`font-bold text-sm ${totals.net >= 0 ? 'text-green-600' : 'text-red-500'}`}>
+                {totals.net >= 0 ? '+' : '−'}{fmt(Math.abs(totals.net))}
+              </span>
+            </span>
           </div>
 
           {/* Секции по салонам */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
           {visibleShopIds.map(sid => {
             const shopName = byShop[sid]?.name ?? shops.find(s => s.id === sid)?.name ?? sid
-            const rev = revenue[sid] ?? { orders: 0, salesNal: 0, salesBeznal: 0 }
-            const shopEntries = byShop[sid]?.entries ?? []
+            const rev = revenue[sid] ?? { orders: 0, sales: 0 }
+            const shopEntries    = byShop[sid]?.entries ?? []
+            const visibleEntries = showSalary ? shopEntries : shopEntries.filter(e => e.source !== 'SALARY')
             const shopExpenses  = shopEntries.filter(e => !e.isIncome).reduce((s, e) => s + e.amount, 0)
             const shopIncManual = shopEntries.filter(e =>  e.isIncome).reduce((s, e) => s + e.amount, 0)
-            const shopRevTotal  = rev.orders + rev.salesNal + rev.salesBeznal
+            const shopRevTotal  = rev.orders + rev.sales
             const shopNet       = shopRevTotal + shopIncManual - shopExpenses
+            const isCollapsed   = collapsedShops.has(sid)
+            const toggleCollapse = () => setCollapsedShops(prev => {
+              const next = new Set(prev); next.has(sid) ? next.delete(sid) : next.add(sid); return next
+            })
 
             // Расходы по категориям
             const expByType: Record<string, number> = {}
@@ -271,7 +339,7 @@ export default function CashPage() {
                 {/* Заголовок */}
                 <div className="px-4 py-2.5 border-b border-gray-50 flex items-center justify-between">
                   <div className="flex items-center gap-2">
-                    <div className="w-2 h-2 rounded-full bg-blue-400 shrink-0" />
+                    <div className="w-2 h-2 rounded-full bg-gray-300 shrink-0" />
                     <span className="text-sm font-semibold text-gray-800">{shopName}</span>
                   </div>
                   <button onClick={() => openAdd(sid)}
@@ -280,60 +348,77 @@ export default function CashPage() {
                   </button>
                 </div>
 
-                {/* Мини-карточки */}
-                <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 p-3">
-                  <MiniCard label="Заказы"         value={rev.orders}      color="text-emerald-600" />
-                  <MiniCard label="Продажи нал"    value={rev.salesNal}    color="text-emerald-500" />
-                  <MiniCard label="Продажи безнал" value={rev.salesBeznal} color="text-blue-600" />
-                  <MiniCard label="Расходы"        value={shopExpenses}    color="text-red-500" />
-                  <MiniCard label="Итого"          value={shopNet}         color={shopNet >= 0 ? 'text-gray-800' : 'text-red-600'} bold />
+                {/* Статы */}
+                <div className="px-3 py-2 flex flex-wrap gap-x-4 gap-y-1 text-xs border-b border-gray-50">
+                  {rev.orders > 0 && <span className="text-gray-400">Заказы <span className="font-medium text-green-600">+{fmt(rev.orders)}</span></span>}
+                  {rev.sales  > 0 && <span className="text-gray-400">Продажи <span className="font-medium text-green-600">+{fmt(rev.sales)}</span></span>}
+                  {shopExpenses > 0 && <span className="text-gray-400">Расходы <span className="font-medium text-red-500">−{fmt(shopExpenses)}</span></span>}
+                  <span className="text-gray-400 ml-auto">Итого <span className={`font-semibold ${shopNet >= 0 ? 'text-green-600' : 'text-red-500'}`}>{shopNet >= 0 ? '+' : '−'}{fmt(Math.abs(shopNet))}</span></span>
                 </div>
 
                 {/* Расходы по категориям */}
                 {expTypes.length > 0 && (
-                  <div className="px-3 pb-3 flex flex-wrap gap-2 border-t border-gray-50 pt-2.5">
+                  <div className="px-3 py-2 flex flex-wrap gap-2">
                     {expTypes.map(([type, val]) => (
                       <div key={type} className="flex items-center gap-1">
-                        <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${TYPE_COLORS[type] ?? 'bg-gray-100 text-gray-600'}`}>{type}</span>
+                        <span className="text-[10px] px-1.5 py-0.5 rounded font-medium bg-gray-100 text-gray-600">{type}</span>
                         <span className="text-[10px] font-semibold text-red-500">−{fmt(val)}</span>
                       </div>
                     ))}
                   </div>
                 )}
 
+                {/* Операции: заголовок с тогглом */}
+                {visibleEntries.length > 0 && (
+                  <div className="border-t border-gray-100 px-3 py-1 flex items-center justify-between">
+                    <span className="text-[11px] text-gray-400">Операции · {visibleEntries.length}</span>
+                    <button onClick={toggleCollapse} className="text-[11px] text-gray-400 hover:text-gray-600 transition-colors">
+                      {isCollapsed ? '▸ Раскрыть' : '▾ Свернуть'}
+                    </button>
+                  </div>
+                )}
+
                 {/* Таблица операций */}
-                {shopEntries.length > 0 && (
-                  <div className="border-t border-gray-50 overflow-x-auto">
-                    <table className="w-full min-w-[760px] text-xs">
+                {visibleEntries.length > 0 && !isCollapsed && (
+                  <div className="overflow-x-auto">
+                    <table className="w-full min-w-[760px] text-xs font-sans">
                       <thead>
                         <tr className="bg-gray-50 text-gray-400">
-                          <th className="text-left px-3 py-2 font-medium w-20">Дата</th>
-                          <th className="text-left px-3 py-2 font-medium">Тип</th>
-                          <th className="text-left px-3 py-2 font-medium w-20">Метод</th>
-                          <th className="text-right px-3 py-2 font-medium w-24">Сумма</th>
-                          <th className="text-left px-3 py-2 font-medium">Комментарий</th>
-                          <th className="text-left px-3 py-2 font-medium w-24">Автор</th>
-                          {isAdmin && <th className="w-7" />}
+                          <th className="text-left px-2 py-1 font-medium w-16">Дата</th>
+                          <th className="text-left px-2 py-1 font-medium">Тип</th>
+                          <th className="text-left px-2 py-1 font-medium w-20">Метод</th>
+                          <th className="text-right px-2 py-1 font-medium w-24">Сумма</th>
+                          <th className="text-left px-2 py-1 font-medium">Комментарий</th>
+                          <th className="text-left px-2 py-1 font-medium w-28">Сотрудник</th>
+                          {isAdmin && <th className="w-6" />}
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-50">
-                        {shopEntries.map(e => (
+                        {visibleEntries.map(e => (
                           <tr key={e.id} className="hover:bg-gray-50">
-                            <td className="px-3 py-2 text-gray-400">{fmtDt(e.date)}</td>
-                            <td className="px-3 py-2">
-                              <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-medium ${TYPE_COLORS[e.type] ?? (e.isIncome ? 'bg-emerald-50 text-emerald-700' : 'bg-gray-100 text-gray-600')}`}>
+                            <td className="px-2 py-1 text-gray-400 whitespace-nowrap">{fmtDt(e.date)}</td>
+                            <td className="px-2 py-1">
+                              <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-medium ${TYPE_COLORS[e.type] ?? (e.isIncome ? 'bg-green-50 text-green-700' : 'bg-gray-100 text-gray-600')}`}>
                                 {e.type}
                               </span>
+                              {e.source === 'SALARY' && (
+                                <span className="ml-1 text-[10px] text-gray-400 italic">авто</span>
+                              )}
                             </td>
-                            <td className="px-3 py-2 text-gray-400">{PAY_METHODS[e.payMethod as keyof typeof PAY_METHODS] ?? e.payMethod}</td>
-                            <td className={`px-3 py-2 text-right font-semibold ${e.isIncome ? 'text-emerald-600' : 'text-red-500'}`}>
+                            <td className="px-2 py-1 text-gray-400">{PAY_METHODS[e.payMethod as keyof typeof PAY_METHODS] ?? e.payMethod}</td>
+                            <td className={`px-2 py-1 text-right font-semibold whitespace-nowrap ${e.isIncome ? 'text-green-600' : 'text-red-500'}`}>
                               {e.isIncome ? '+' : '−'}{fmt(e.amount)}
                             </td>
-                            <td className="px-3 py-2 text-gray-400 truncate max-w-[160px]">{e.comment ?? '—'}</td>
-                            <td className="px-3 py-2 text-gray-400 truncate max-w-[100px]">{e.authorName}</td>
+                            <td className="px-2 py-1 text-gray-400 truncate max-w-[140px]">
+                              {e.comment || '—'}
+                              {e.source === 'SALARY' && e.linkedName && <span className="text-gray-500 font-medium">{e.comment ? ` · ${e.linkedName}` : e.linkedName}</span>}
+                            </td>
+                            <td className="px-2 py-1 text-gray-500 text-[11px] whitespace-nowrap">{e.authorName}</td>
                             {isAdmin && (
-                              <td className="px-3 py-2 text-center">
-                                <button onClick={() => deleteEntry(e.id)} className="text-gray-300 hover:text-red-400 transition-colors">✕</button>
+                              <td className="px-2 py-1 text-center">
+                                {e.source !== 'SALARY' && (
+                                  <button onClick={() => deleteEntry(e.id)} className="text-gray-300 hover:text-red-400 transition-colors">✕</button>
+                                )}
                               </td>
                             )}
                           </tr>
@@ -343,12 +428,14 @@ export default function CashPage() {
                   </div>
                 )}
 
-                {shopEntries.length === 0 && rev.orders === 0 && rev.salesNal === 0 && rev.salesBeznal === 0 && (
+                {visibleEntries.length === 0 && rev.orders === 0 && rev.sales === 0 && (
                   <p className="text-center py-5 text-gray-400 text-xs">Нет операций за период</p>
                 )}
               </div>
             )
           })}
+
+          </div>
 
           {visibleShopIds.length === 0 && !loading && (
             <div className="text-center py-16 text-gray-400 text-sm">Нет данных за период</div>
@@ -358,107 +445,109 @@ export default function CashPage() {
 
       {/* Модал: добавить операцию */}
       {showAdd && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm mx-4 p-6">
-            <div className="flex items-center justify-between mb-4">
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/30 backdrop-blur-sm">
+          <div className="bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl w-full sm:max-w-sm sm:mx-4 flex flex-col max-h-[92dvh]">
+
+            {/* Заголовок (фиксированный) */}
+            <div className="flex items-center justify-between px-6 pt-5 pb-3 shrink-0 border-b border-gray-100">
               <h2 className="text-sm font-semibold text-gray-800">Новая операция</h2>
               <button onClick={() => setShowAdd(false)} className="text-gray-400 hover:text-gray-600 text-lg leading-none">×</button>
             </div>
 
-            <div className="space-y-4">
-              <div className="flex gap-2">
-                <button onClick={() => { setIsIncome(true); setEntryType('') }}
-                  className={`flex-1 py-2 rounded-lg text-sm font-medium ${isIncome ? 'bg-emerald-600 text-white' : 'bg-gray-100 text-gray-600'}`}>
-                  Приход
-                </button>
-                <button onClick={() => { setIsIncome(false); setEntryType('') }}
-                  className={`flex-1 py-2 rounded-lg text-sm font-medium ${!isIncome ? 'bg-red-500 text-white' : 'bg-gray-100 text-gray-600'}`}>
-                  Расход
-                </button>
-              </div>
+            {/* Прокручиваемое содержимое */}
+            <div className="overflow-y-auto px-6 py-4 flex-1">
+              <div className="space-y-4">
+                <div className="flex gap-2">
+                  <button onClick={() => { setIsIncome(true); setEntryType('') }}
+                    className={`flex-1 py-2 rounded-lg text-sm font-medium ${isIncome ? 'bg-green-600 text-white' : 'bg-gray-100 text-gray-600'}`}>
+                    Приход
+                  </button>
+                  <button onClick={() => { setIsIncome(false); setEntryType('') }}
+                    className={`flex-1 py-2 rounded-lg text-sm font-medium ${!isIncome ? 'bg-red-500 text-white' : 'bg-gray-100 text-gray-600'}`}>
+                    Расход
+                  </button>
+                </div>
 
-              <div>
-                <label className="block text-xs text-gray-500 mb-1">Тип операции</label>
-                <select value={entryType} onChange={e => setEntryType(e.target.value)}
-                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-200">
-                  <option value="">Выберите тип</option>
-                  {currentTypes.map(t => <option key={t} value={t}>{t}</option>)}
-                </select>
-              </div>
-
-              {isAdmin && shops.length > 0 && (
                 <div>
-                  <label className="block text-xs text-gray-500 mb-1">Магазин</label>
-                  <select value={modalShopId} onChange={e => setModalShopId(e.target.value)}
-                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-200">
-                    {shops.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                  <label className="block text-xs text-gray-500 mb-1">Тип операции</label>
+                  <select value={entryType} onChange={e => { setEntryType(e.target.value); setCustomType('') }}
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#FFD600]">
+                    <option value="">Выберите тип</option>
+                    {currentTypes.map(t => <option key={t} value={t}>{t === '__custom__' ? 'Другое...' : t}</option>)}
                   </select>
                 </div>
-              )}
+                {entryType === '__custom__' && (
+                  <div>
+                    <input value={customType} onChange={e => setCustomType(e.target.value)}
+                      placeholder="Введите тип операции" autoFocus
+                      className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#FFD600]" />
+                  </div>
+                )}
 
-              <div>
-                <label className="block text-xs text-gray-500 mb-1">Метод</label>
-                <div className="flex gap-2">
-                  {(['CASH','CARD','TRANSFER'] as const).map(m => (
-                    <button key={m} onClick={() => setPayMethod(m)}
-                      className={`flex-1 py-1.5 rounded-lg text-xs font-medium ${payMethod === m ? 'bg-[#FFD600] text-black' : 'bg-gray-100 text-gray-600'}`}>
-                      {PAY_METHODS[m]}
-                    </button>
-                  ))}
+                {isAdmin && shops.length > 0 && (
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">Магазин</label>
+                    <select value={modalShopId} onChange={e => setModalShopId(e.target.value)}
+                      className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#FFD600]">
+                      {shops.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                    </select>
+                  </div>
+                )}
+
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">Метод</label>
+                  <div className="flex gap-2">
+                    {(['CASH','CARD','TRANSFER'] as const).map(m => (
+                      <button key={m} onClick={() => setPayMethod(m)}
+                        className={`flex-1 py-1.5 rounded-lg text-xs font-medium ${payMethod === m ? 'bg-[#FFD600] text-black' : 'bg-gray-100 text-gray-600'}`}>
+                        {PAY_METHODS[m]}
+                      </button>
+                    ))}
+                  </div>
                 </div>
-              </div>
 
-              <div>
-                <label className="block text-xs text-gray-500 mb-1">Сумма, ₽</label>
-                <input type="number" min="0" value={amount} onChange={e => setAmount(e.target.value)}
-                  placeholder="0"
-                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-200" />
-              </div>
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">Сумма, ₽</label>
+                  <input type="number" min="0" value={amount} onChange={e => setAmount(e.target.value)}
+                    placeholder="0"
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#FFD600]" />
+                </div>
 
-              <div>
-                <label className="block text-xs text-gray-500 mb-1">Дата</label>
-                <input type="date" value={entryDate} onChange={e => setEntryDate(e.target.value)}
-                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-200" />
-              </div>
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">Дата</label>
+                  <input type="date" value={entryDate} onChange={e => setEntryDate(e.target.value)}
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#FFD600]" />
+                </div>
 
-              <div>
-                <label className="block text-xs text-gray-500 mb-1">Комментарий (необязательно)</label>
-                <input type="text" value={comment} onChange={e => setComment(e.target.value)}
-                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-200" />
-              </div>
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">Комментарий (необязательно)</label>
+                  <input type="text" value={comment} onChange={e => setComment(e.target.value)}
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#FFD600]" />
+                </div>
 
-              <button onClick={submitEntry} disabled={saving || !entryType || !amount}
-                className="w-full py-2.5 rounded-xl bg-[#FFD600] text-black text-sm font-medium hover:bg-[#FFCA00] disabled:opacity-40 transition-colors">
-                {saving ? 'Сохраняем...' : 'Добавить'}
-              </button>
+                {addError && (
+                  <p className="text-xs text-red-500 bg-red-50 rounded-lg px-3 py-2">{addError}</p>
+                )}
+                <button onClick={submitEntry} disabled={saving || !entryType || (entryType === '__custom__' && !customType.trim()) || !amount}
+                  className="w-full py-2.5 rounded-xl bg-[#FFD600] text-black text-sm font-medium hover:bg-[#FFCA00] disabled:opacity-40 transition-colors">
+                  {saving ? 'Сохраняем...' : 'Добавить'}
+                </button>
+              </div>
             </div>
+
           </div>
         </div>
       )}
-    </div>
-  )
-}
 
-function BalCard({ label, value, color, bold }: { label: string; value: number; color: string; bold?: boolean }) {
-  const isNeg = value < 0
-  return (
-    <div className={`rounded-xl border p-3 bg-white ${bold ? 'border-gray-200' : 'border-gray-100'}`}>
-      <div className="text-[11px] font-medium text-gray-500 mb-0.5">{label}</div>
-      <div className={`text-base ${bold ? 'font-bold' : 'font-semibold'} ${isNeg ? 'text-red-500' : color}`}>
-        {isNeg ? '−' : ''}{Math.abs(value).toLocaleString('ru-RU')} ₽
-      </div>
-    </div>
-  )
-}
-
-function MiniCard({ label, value, color, bold }: { label: string; value: number; color: string; bold?: boolean }) {
-  const isNeg = value < 0
-  return (
-    <div className="bg-gray-50 rounded-lg p-2.5">
-      <div className="text-[10px] text-gray-400 mb-0.5">{label}</div>
-      <div className={`text-sm ${bold ? 'font-bold' : 'font-semibold'} ${isNeg ? 'text-red-500' : color}`}>
-        {isNeg ? '−' : ''}{Math.abs(value).toLocaleString('ru-RU')} ₽
-      </div>
+      {showHelp && (
+        <HelpModal
+          title="Касса — справка"
+          color="bg-gray-50 border-gray-100"
+          dot="bg-gray-400"
+          items={HELP_ITEMS}
+          onClose={() => setShowHelp(false)}
+        />
+      )}
     </div>
   )
 }
