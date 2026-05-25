@@ -7,13 +7,29 @@ datasource db {
   provider = "postgresql"
 }
 
+model SalaryTier {
+  id        Int   @id @default(autoincrement())
+  minMargin Float @unique
+  salary    Float
+}
+
+model ShopGroup {
+  id        Int     @id @default(autoincrement())
+  name      String  @unique
+  threshold Float?
+  shops     Shop[]
+}
+
 model Shop {
-  id           String        @id
-  name         String
-  color        String?
-  phones       String?
-  isVisible    Boolean       @default(true)
-  syncedAt     DateTime      @default(now())
+  id                 String        @id
+  name               String
+  color              String?
+  phones             String?
+  isVisible          Boolean       @default(true)
+  gangsterThreshold  Float?        // порог для одиночных салонов (без группы)
+  groupId            Int?
+  group              ShopGroup?    @relation(fields: [groupId], references: [id])
+  syncedAt           DateTime      @default(now())
   orders        Order[]
   sales         Sale[]
   employees     Employee[]

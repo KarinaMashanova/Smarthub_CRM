@@ -4,94 +4,68 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import Link from 'next/link'
 
 interface SyncLog {
-  id: number
-  entity: string
-  status: string
-  count: number
-  error: string | null
-  startedAt: string
-  finishedAt: string | null
+  id: number; entity: string; status: string; count: number
+  error: string | null; startedAt: string; finishedAt: string | null
 }
-
-interface Counts {
-  shops: number
-  employees: number
-  orders: number
-  sales: number
-  scheduleSlots: number
-}
-
-interface WeekResult {
-  from: string
-  to: string
-  orders: number
-  sales: number
-  error?: string
-}
+interface Counts { shops: number; employees: number; orders: number; sales: number; scheduleSlots: number }
+interface WeekResult { from: string; to: string; orders: number; sales: number; error?: string }
 
 const ENTITY_LABELS: Record<string, string> = {
-  shops:            'Магазины',
-  employees:        'Сотрудники',
+  shops:                        'Магазины',
+  employees:                    'Сотрудники',
   shops_directory_backfill:     'Магазины (сверка)',
   employees_directory_backfill: 'Сотрудники (сверка)',
-  orders_delta:     'Заказы (дельта)',
-  sales_delta:      'Продажи (дельта)',
-  orders_backfill:  'Заказы (бэкфилл)',
-  sales_backfill:   'Продажи (бэкфилл)',
+  orders_delta:                 'Заказы (дельта)',
+  sales_delta:                  'Продажи (дельта)',
+  orders_backfill:              'Заказы (бэкфилл)',
+  sales_backfill:               'Продажи (бэкфилл)',
 }
 
-function splitIntoWeeks(from: Date, to: Date): { from: Date; to: Date }[] {
+const COUNT_LABELS: [keyof Counts, string][] = [
+  ['shops', 'Магазины'], ['employees', 'Сотрудники'],
+  ['orders', 'Заказы'], ['sales', 'Продажи'], ['scheduleSlots', 'Смены'],
+]
+
+function splitIntoWeeks(from: Date, to: Date) {
   const weeks: { from: Date; to: Date }[] = []
   let cursor = new Date(from)
   while (cursor < to) {
-    const end = new Date(Math.min(cursor.getTime() + 7 * 24 * 60 * 60 * 1000, to.getTime()))
+    const end = new Date(Math.min(cursor.getTime() + 7 * 86400000, to.getTime()))
     weeks.push({ from: new Date(cursor), to: end })
     cursor = end
   }
   return weeks
 }
-
 function fmtDate(iso: string) {
   return new Date(iso).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' })
 }
-
-function duration(start: string, end: string | null) {
-  if (!end) return '...'
-  const ms = new Date(end).getTime() - new Date(start).getTime()
-  if (ms < 1000) return `${ms}ms`
-  return `${(ms / 1000).toFixed(1)}s`
-}
-
-function fmt(iso: string) {
+function fmtTs(iso: string) {
   const d = new Date(iso)
   return d.toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' })
 }
-
-const COUNT_LABELS: [keyof Counts, string][] = [
-  ['shops',         'Магазины'],
-  ['employees',     'Сотрудники'],
-  ['orders',        'Заказы'],
-  ['sales',         'Продажи'],
-  ['scheduleSlots', 'Смены'],
-]
+function duration(start: string, end: string | null) {
+  if (!end) return '...'
+  const ms = new Date(end).getTime() - new Date(start).getTime()
+  return ms < 1000 ? `${ms}ms` : `${(ms / 1000).toFixed(1)}s`
+}
 
 export default function SyncPage() {
-  const [logs, setLogs]     = useState<SyncLog[]>([])
-  const [counts, setCounts] = useState<Counts | null>(null)
-  const [loading, setLoading]   = useState(true)
+  const [logs,    setLogs]    = useState<SyncLog[]>([])
+  const [counts,  setCounts]  = useState<Counts | null>(null)
+  const [loading, setLoading] = useState(true)
 
-  const [backfillFrom, setBackfillFrom] = useState('2026-04-01')
-  const [backfillTo,   setBackfillTo]   = useState('2026-05-24')
+  const [backfillFrom,    setBackfillFrom]    = useState('2026-04-01')
+  const [backfillTo,      setBackfillTo]      = useState('2026-05-24')
   const [backfillRunning, setBackfillRunning] = useState(false)
   const [backfillResults, setBackfillResults] = useState<WeekResult[]>([])
   const [backfillTotal,   setBackfillTotal]   = useState(0)
   const [backfillCurrent, setBackfillCurrent] = useState(0)
   const [rateLimitUntil,  setRateLimitUntil]  = useState<Date | null>(null)
   const [rateLimitSecsLeft, setRateLimitSecsLeft] = useState(0)
-  const [directoryRunning, setDirectoryRunning] = useState(false)
-  const [directoryResult, setDirectoryResult] = useState<{ shops: number; employees: number } | null>(null)
-  const [directoryError, setDirectoryError] = useState('')
   const cancelRef = useRef(false)
+
+  const [directoryRunning, setDirectoryRunning] = useState(false)
+  const [directoryMsg,     setDirectoryMsg]     = useState('')
 
   const load = useCallback(() => {
     setLoading(true)
@@ -104,250 +78,183 @@ export default function SyncPage() {
   useEffect(() => { load() }, [load])
 
   async function waitForRateLimit(resetAt: Date) {
-    const interval = setInterval(() => {
-      const secsLeft = Math.max(0, Math.ceil((resetAt.getTime() - Date.now()) / 1000))
-      setRateLimitSecsLeft(secsLeft)
-      if (secsLeft === 0) clearInterval(interval)
+    const iv = setInterval(() => {
+      const s = Math.max(0, Math.ceil((resetAt.getTime() - Date.now()) / 1000))
+      setRateLimitSecsLeft(s)
+      if (s === 0) clearInterval(iv)
     }, 1000)
     setRateLimitUntil(resetAt)
     setRateLimitSecsLeft(Math.ceil((resetAt.getTime() - Date.now()) / 1000))
     await new Promise<void>(resolve => {
-      const check = setInterval(() => {
-        if (Date.now() >= resetAt.getTime() || cancelRef.current) {
-          clearInterval(check)
-          clearInterval(interval)
-          resolve()
-        }
+      const c = setInterval(() => {
+        if (Date.now() >= resetAt.getTime() || cancelRef.current) { clearInterval(c); clearInterval(iv); resolve() }
       }, 500)
     })
-    setRateLimitUntil(null)
-    setRateLimitSecsLeft(0)
+    setRateLimitUntil(null); setRateLimitSecsLeft(0)
   }
 
   async function runWeek(wFrom: Date, wTo: Date): Promise<{ orders: number; sales: number }> {
-    const res = await fetch('/api/admin/backfill', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ from: wFrom.toISOString(), to: wTo.toISOString() }),
-    })
+    const res  = await fetch('/api/admin/backfill', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ from: wFrom.toISOString(), to: wTo.toISOString() }) })
     const data = await res.json()
-    if (res.status === 429 && data.retryAfter) {
-      await waitForRateLimit(new Date(data.retryAfter))
-      if (cancelRef.current) throw new Error('Отменено')
-      return runWeek(wFrom, wTo)
-    }
+    if (res.status === 429 && data.retryAfter) { await waitForRateLimit(new Date(data.retryAfter)); if (cancelRef.current) throw new Error('Отменено'); return runWeek(wFrom, wTo) }
     if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`)
     return { orders: data.orders, sales: data.sales }
   }
 
   async function startBackfill() {
-    const from = new Date(backfillFrom)
-    const to   = new Date(backfillTo + 'T23:59:59')
+    const from = new Date(backfillFrom), to = new Date(backfillTo + 'T23:59:59')
     if (isNaN(from.getTime()) || isNaN(to.getTime()) || from >= to) return
-
     const weeks = splitIntoWeeks(from, to)
     cancelRef.current = false
-    setBackfillRunning(true)
-    setBackfillResults([])
-    setBackfillTotal(weeks.length)
-    setBackfillCurrent(0)
-
+    setBackfillRunning(true); setBackfillResults([]); setBackfillTotal(weeks.length); setBackfillCurrent(0)
     for (let i = 0; i < weeks.length; i++) {
       if (cancelRef.current) break
       setBackfillCurrent(i + 1)
       const { from: wFrom, to: wTo } = weeks[i]
       try {
-        const result = await runWeek(wFrom, wTo)
-        setBackfillResults(prev => [...prev, {
-          from: wFrom.toISOString(), to: wTo.toISOString(), ...result,
-        }])
+        const r = await runWeek(wFrom, wTo)
+        setBackfillResults(p => [...p, { from: wFrom.toISOString(), to: wTo.toISOString(), ...r }])
       } catch (e: any) {
-        setBackfillResults(prev => [...prev, {
-          from: wFrom.toISOString(), to: wTo.toISOString(),
-          orders: 0, sales: 0, error: e.message,
-        }])
+        setBackfillResults(p => [...p, { from: wFrom.toISOString(), to: wTo.toISOString(), orders: 0, sales: 0, error: e.message }])
         if (!cancelRef.current) break
       }
     }
-
-    setBackfillRunning(false)
-    load()
+    setBackfillRunning(false); load()
   }
 
-  async function startDirectoryBackfill() {
-    setDirectoryRunning(true)
-    setDirectoryResult(null)
-    setDirectoryError('')
+  async function startDirectory() {
+    setDirectoryRunning(true); setDirectoryMsg('')
     try {
-      const res = await fetch('/api/admin/directory-backfill', { method: 'POST' })
+      const res  = await fetch('/api/admin/directory-backfill', { method: 'POST' })
       const data = await res.json()
-      if (!res.ok) {
-        if (res.status === 429 && data.retryAfter) {
-          throw new Error(`Лимит API до ${new Date(data.retryAfter).toLocaleTimeString('ru-RU')}`)
-        }
-        throw new Error(data.error ?? `HTTP ${res.status}`)
-      }
-      setDirectoryResult({ shops: data.shops ?? 0, employees: data.employees ?? 0 })
+      if (!res.ok) throw new Error(res.status === 429 && data.retryAfter ? `Лимит API до ${new Date(data.retryAfter).toLocaleTimeString('ru-RU')}` : (data.error ?? `HTTP ${res.status}`))
+      setDirectoryMsg(`Салоны: ${data.shops ?? 0}, сотрудники: ${data.employees ?? 0}`)
       load()
-    } catch (e: any) {
-      setDirectoryError(e.message ?? 'Ошибка сверки')
-    } finally {
-      setDirectoryRunning(false)
-    }
+    } catch (e: any) { setDirectoryMsg(e.message ?? 'Ошибка') }
+    finally { setDirectoryRunning(false) }
   }
 
   return (
     <div className="flex flex-col h-[calc(100dvh-7rem)] overflow-hidden bg-white md:h-screen">
-      <div className="shrink-0 border-b border-gray-100 px-4 py-3 flex items-center gap-3 md:px-6">
+      <div className="shrink-0 border-b border-gray-100 px-4 py-2.5 flex items-center gap-3 md:px-6">
         <h1 className="font-semibold text-gray-900 text-sm">Синхронизация</h1>
-        <button onClick={load} className="ml-auto text-xs text-gray-400 hover:text-gray-600 px-2 py-1 rounded hover:bg-gray-100">
+        <button onClick={load} className="ml-auto text-xs text-gray-400 hover:text-gray-600 px-2 py-1 rounded hover:bg-gray-100 transition-colors">
           Обновить
         </button>
       </div>
 
-      <div className="flex-1 overflow-auto px-4 py-5 space-y-6 md:px-6">
+      <div className="flex-1 overflow-auto px-4 py-4 space-y-4 md:px-6">
 
-        {/* DB counts */}
-        <div>
-          <p className="text-xs font-medium text-gray-500 mb-2">Данные в базе</p>
-          <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
-            {COUNT_LABELS.map(([key, label]) => (
-              <div key={key} className="bg-gray-50 rounded-xl px-4 py-3">
-                <p className="text-xl font-bold text-gray-900">
-                  {counts ? counts[key].toLocaleString('ru-RU') : '—'}
-                </p>
-                <p className="text-xs text-gray-400 mt-0.5">{label}</p>
-              </div>
-            ))}
-          </div>
+        {/* Счётчики */}
+        <div className="flex flex-wrap gap-2">
+          {COUNT_LABELS.map(([key, label]) => (
+            <div key={key} className="bg-gray-50 rounded-xl px-3 py-2 flex items-baseline gap-2">
+              <span className="text-sm font-bold text-gray-900">{counts ? counts[key].toLocaleString('ru-RU') : '—'}</span>
+              <span className="text-xs text-gray-400">{label}</span>
+            </div>
+          ))}
         </div>
 
-        {/* Directory backfill */}
-        <div>
-          <p className="text-xs font-medium text-gray-500 mb-2">Салоны и сотрудники</p>
-          <div className="bg-gray-50 rounded-xl px-4 py-4">
-            <div className="flex flex-wrap items-center gap-3">
-              <div className="min-w-0">
-                <p className="text-sm font-medium text-gray-900">Сверить справочники LiveSklad</p>
-                <p className="text-xs text-gray-400 mt-0.5">
-                  Добавит новые салоны и сотрудников, существующие записи обновит по имени и роли.
-                </p>
-              </div>
-              <button
-                onClick={startDirectoryBackfill}
-                disabled={directoryRunning}
-                className="ml-auto text-xs px-3 py-1.5 rounded-lg bg-gray-900 text-white hover:bg-gray-800 disabled:opacity-50"
-              >
-                {directoryRunning ? 'Сверяем...' : 'Сверить и добавить'}
+        {/* Действия */}
+        <div className="rounded-xl border border-gray-100 divide-y divide-gray-100">
+
+          {/* Сверка справочников */}
+          <div className="flex items-center gap-3 px-4 py-3">
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-medium text-gray-800">Салоны и сотрудники</p>
+              <p className="text-[11px] text-gray-400 mt-0.5">Сверить с LiveSklad — добавить новых, обновить существующих</p>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              {directoryMsg && <span className="text-[11px] text-gray-500">{directoryMsg}</span>}
+              <button onClick={startDirectory} disabled={directoryRunning}
+                className="text-xs px-3 py-1.5 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-700 disabled:opacity-50 transition-colors whitespace-nowrap">
+                {directoryRunning ? 'Сверяем...' : 'Сверить'}
               </button>
             </div>
-
-            {(directoryResult || directoryError) && (
-              <div className={`mt-3 text-xs rounded-lg px-3 py-2 ${directoryError ? 'bg-red-50 text-red-600' : 'bg-white text-gray-500'}`}>
-                {directoryError || `Салоны: ${directoryResult?.shops ?? 0}, сотрудники: ${directoryResult?.employees ?? 0}`}
-              </div>
-            )}
           </div>
-        </div>
 
-        {/* Catalog */}
-        <div>
-          <p className="text-xs font-medium text-gray-500 mb-2">Справочник товаров</p>
-          <div className="bg-gray-50 rounded-xl px-4 py-4 flex flex-wrap items-center gap-3">
-            <div className="min-w-0">
-              <p className="text-sm font-medium text-gray-900">Прайс для бонуса РЦ</p>
-              <p className="text-xs text-gray-400 mt-0.5">Загружайте Excel раз в неделю. Аксы, Стекло, Игрушки, Чехлы.</p>
+          {/* Справочник товаров */}
+          <div className="flex items-center gap-3 px-4 py-3">
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-medium text-gray-800">Справочник товаров</p>
+              <p className="text-[11px] text-gray-400 mt-0.5">Прайс для бонуса РЦ — Аксы, Стекло, Игрушки, Чехлы</p>
             </div>
-            <Link href="/admin/catalog" className="ml-auto text-xs px-3 py-1.5 rounded-lg bg-gray-900 text-white hover:bg-gray-800">
-              Обновить справочник →
+            <Link href="/admin/catalog"
+              className="text-xs px-3 py-1.5 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-700 transition-colors whitespace-nowrap shrink-0">
+              Обновить →
             </Link>
           </div>
-        </div>
 
-        {/* Backfill */}
-        <div>
-          <p className="text-xs font-medium text-gray-500 mb-2">Восстановление данных</p>
-          <div className="bg-gray-50 rounded-xl px-4 py-4 space-y-3">
-            <div className="flex flex-wrap gap-2 items-end">
-              <div className="flex flex-col gap-1">
-                <label className="text-xs text-gray-400">С</label>
-                <input
-                  type="date"
-                  value={backfillFrom}
-                  onChange={e => setBackfillFrom(e.target.value)}
-                  disabled={backfillRunning}
-                  className="text-xs border border-gray-200 rounded-lg px-2 py-1.5 bg-white disabled:opacity-50"
-                />
-              </div>
-              <div className="flex flex-col gap-1">
-                <label className="text-xs text-gray-400">По</label>
-                <input
-                  type="date"
-                  value={backfillTo}
-                  onChange={e => setBackfillTo(e.target.value)}
-                  disabled={backfillRunning}
-                  className="text-xs border border-gray-200 rounded-lg px-2 py-1.5 bg-white disabled:opacity-50"
-                />
-              </div>
-              <button
-                onClick={() => { setBackfillFrom('2026-04-01'); setBackfillTo('2026-05-24') }}
-                disabled={backfillRunning}
-                className="text-xs px-2 py-1.5 rounded-lg border border-gray-200 bg-white text-gray-500 hover:bg-gray-100 disabled:opacity-50"
-              >
+          {/* Бонус Гангстер */}
+          <div className="flex items-center gap-3 px-4 py-3">
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-medium text-gray-800">Бонус Гангстер</p>
+              <p className="text-[11px] text-gray-400 mt-0.5">Пороги маржи по салонам — прописать и пересчитать бонусы</p>
+            </div>
+            <Link href="/admin/gangster"
+              className="text-xs px-3 py-1.5 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-700 transition-colors whitespace-nowrap shrink-0">
+              Настроить →
+            </Link>
+          </div>
+
+          {/* Уровни оклада */}
+          <div className="flex items-center gap-3 px-4 py-3">
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-medium text-gray-800">Уровни оклада</p>
+              <p className="text-[11px] text-gray-400 mt-0.5">Пороги маржи → размер оклада за месяц</p>
+            </div>
+            <Link href="/admin/salary-tiers"
+              className="text-xs px-3 py-1.5 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-700 transition-colors whitespace-nowrap shrink-0">
+              Настроить →
+            </Link>
+          </div>
+
+          {/* Восстановление */}
+          <div className="px-4 py-3 space-y-2">
+            <p className="text-xs font-medium text-gray-800">Восстановление данных</p>
+            <div className="flex flex-wrap gap-2 items-center">
+              <input type="date" value={backfillFrom} onChange={e => setBackfillFrom(e.target.value)} disabled={backfillRunning}
+                className="text-xs border border-gray-200 rounded-lg px-2 py-1.5 bg-white disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-[#FFD600]" />
+              <span className="text-xs text-gray-400">—</span>
+              <input type="date" value={backfillTo} onChange={e => setBackfillTo(e.target.value)} disabled={backfillRunning}
+                className="text-xs border border-gray-200 rounded-lg px-2 py-1.5 bg-white disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-[#FFD600]" />
+              <button onClick={() => { setBackfillFrom('2026-04-01'); setBackfillTo('2026-05-24') }} disabled={backfillRunning}
+                className="text-xs px-2 py-1.5 rounded-lg border border-gray-200 bg-white text-gray-500 hover:bg-gray-100 disabled:opacity-50">
                 Апр–Май 2026
               </button>
-              <div className="ml-auto flex gap-2">
+              <div className="ml-auto">
                 {backfillRunning ? (
-                  <button
-                    onClick={() => { cancelRef.current = true }}
-                    className="text-xs px-3 py-1.5 rounded-lg bg-red-100 text-red-600 hover:bg-red-200"
-                  >
+                  <button onClick={() => { cancelRef.current = true }}
+                    className="text-xs px-3 py-1.5 rounded-lg bg-red-100 text-red-600 hover:bg-red-200">
                     Остановить
                   </button>
                 ) : (
-                  <button
-                    onClick={startBackfill}
-                    className="text-xs px-3 py-1.5 rounded-lg bg-blue-600 text-white hover:bg-blue-700"
-                  >
-                    Запустить восстановление
+                  <button onClick={startBackfill}
+                    className="text-xs px-3 py-1.5 rounded-lg bg-blue-600 text-white hover:bg-blue-700">
+                    Запустить
                   </button>
                 )}
               </div>
             </div>
-
             {(backfillRunning || backfillResults.length > 0) && (
-              <div className="space-y-1">
-                {backfillRunning && rateLimitUntil ? (
-                  <p className="text-xs text-amber-600 font-medium">
-                    Лимит API — ждём сброса: {rateLimitSecsLeft} сек
-                    ({rateLimitUntil.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', second: '2-digit' })})
-                  </p>
-                ) : backfillRunning ? (
-                  <p className="text-xs text-gray-500">
-                    Неделя {backfillCurrent} / {backfillTotal}...
-                  </p>
-                ) : null}
+              <div className="space-y-1 mt-1">
+                {backfillRunning && rateLimitUntil
+                  ? <p className="text-xs text-amber-600">Лимит API — ждём: {rateLimitSecsLeft}с</p>
+                  : backfillRunning
+                  ? <p className="text-xs text-gray-500">Неделя {backfillCurrent} / {backfillTotal}...</p>
+                  : null}
                 {backfillResults.map((r, i) => (
-                  <div key={i} className={`flex items-center gap-2 text-xs px-2 py-1 rounded-lg ${r.error ? 'bg-red-50' : 'bg-white'}`}>
-                    <span className={r.error ? 'text-red-500' : 'text-green-600'}>
-                      {r.error ? '✗' : '✓'}
+                  <div key={i} className={`flex items-center gap-2 text-xs px-2 py-1 rounded-lg ${r.error ? 'bg-red-50' : 'bg-gray-50'}`}>
+                    <span className={r.error ? 'text-red-500' : 'text-green-600'}>{r.error ? '✗' : '✓'}</span>
+                    <span className="text-gray-500 w-20 shrink-0">{fmtDate(r.from)} — {fmtDate(r.to)}</span>
+                    <span className={r.error ? 'text-red-500 truncate' : 'text-gray-400'}>
+                      {r.error ?? `заказы: ${r.orders}, продажи: ${r.sales}`}
                     </span>
-                    <span className="text-gray-600 w-24 shrink-0">
-                      {fmtDate(r.from)} — {fmtDate(r.to)}
-                    </span>
-                    {r.error ? (
-                      <span className="text-red-500 truncate">{r.error}</span>
-                    ) : (
-                      <span className="text-gray-400">
-                        заказы: {r.orders}, продажи: {r.sales}
-                      </span>
-                    )}
                   </div>
                 ))}
                 {!backfillRunning && backfillResults.length > 0 && (
-                  <p className="text-xs text-gray-400 pt-1">
-                    Итого: заказов {backfillResults.reduce((s, r) => s + r.orders, 0)},
-                    продаж {backfillResults.reduce((s, r) => s + r.sales, 0)}
+                  <p className="text-xs text-gray-400">
+                    Итого: заказов {backfillResults.reduce((s, r) => s + r.orders, 0)}, продаж {backfillResults.reduce((s, r) => s + r.sales, 0)}
                   </p>
                 )}
               </div>
@@ -355,56 +262,43 @@ export default function SyncPage() {
           </div>
         </div>
 
-        {/* Logs table */}
+        {/* Логи */}
         <div>
           <p className="text-xs font-medium text-gray-500 mb-2">Последние запуски</p>
           {loading ? (
-            <div className="text-center py-10 text-gray-400 text-sm">Загрузка...</div>
+            <div className="text-center py-8 text-gray-400 text-sm">Загрузка...</div>
           ) : logs.length === 0 ? (
-            <div className="text-center py-10 text-gray-400 text-sm">
-              Синхронизаций ещё не было.
-            </div>
+            <div className="text-center py-8 text-gray-400 text-sm">Синхронизаций ещё не было</div>
           ) : (
             <div className="rounded-xl border border-gray-100 overflow-x-auto">
-              <table className="w-full min-w-[760px] text-xs">
+              <table className="w-full min-w-[640px] text-xs">
                 <thead>
-                  <tr className="bg-gray-50 text-left">
-                    <th className="px-4 py-2.5 font-medium text-gray-500 w-8">#</th>
-                    <th className="px-4 py-2.5 font-medium text-gray-500">Сущность</th>
-                    <th className="px-4 py-2.5 font-medium text-gray-500">Статус</th>
-                    <th className="px-4 py-2.5 font-medium text-gray-500 text-right">Записей</th>
-                    <th className="px-4 py-2.5 font-medium text-gray-500 text-right">Время</th>
-                    <th className="px-4 py-2.5 font-medium text-gray-500">Запущен</th>
-                    <th className="px-4 py-2.5 font-medium text-gray-500">Ошибка</th>
+                  <tr className="bg-gray-50 text-left border-b border-gray-100">
+                    <th className="px-3 py-2 font-medium text-gray-500">Сущность</th>
+                    <th className="px-3 py-2 font-medium text-gray-500">Статус</th>
+                    <th className="px-3 py-2 font-medium text-gray-500 text-right">Записей</th>
+                    <th className="px-3 py-2 font-medium text-gray-500 text-right">Время</th>
+                    <th className="px-3 py-2 font-medium text-gray-500">Запущен</th>
+                    <th className="px-3 py-2 font-medium text-gray-500">Ошибка</th>
                   </tr>
                 </thead>
                 <tbody>
                   {logs.map((log, i) => (
-                    <tr key={log.id} className={`border-t border-gray-100 ${i % 2 === 0 ? '' : 'bg-gray-50/50'}`}>
-                      <td className="px-4 py-2.5 text-gray-300">{log.id}</td>
-                      <td className="px-4 py-2.5 text-gray-700 font-medium">
-                        {ENTITY_LABELS[log.entity] ?? log.entity}
-                      </td>
-                      <td className="px-4 py-2.5">
-                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full font-medium ${
+                    <tr key={log.id} className={`border-t border-gray-100 ${i % 2 === 1 ? 'bg-gray-50/40' : ''}`}>
+                      <td className="px-3 py-2 text-gray-700 font-medium">{ENTITY_LABELS[log.entity] ?? log.entity}</td>
+                      <td className="px-3 py-2">
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${
                           log.status === 'ok'      ? 'bg-green-100 text-green-700' :
                           log.status === 'error'   ? 'bg-red-100 text-red-700' :
-                          log.status === 'running' ? 'bg-amber-100 text-amber-700' :
-                          'bg-gray-100 text-gray-500'
+                          'bg-amber-100 text-amber-700'
                         }`}>
                           {log.status === 'ok' ? 'ok' : log.status === 'error' ? 'ошибка' : 'запущен'}
                         </span>
                       </td>
-                      <td className="px-4 py-2.5 text-right text-gray-600">
-                        {log.count > 0 ? log.count.toLocaleString('ru-RU') : '—'}
-                      </td>
-                      <td className="px-4 py-2.5 text-right text-gray-400">
-                        {duration(log.startedAt, log.finishedAt)}
-                      </td>
-                      <td className="px-4 py-2.5 text-gray-400">{fmt(log.startedAt)}</td>
-                      <td className="px-4 py-2.5 text-red-500 max-w-xs truncate" title={log.error ?? ''}>
-                        {log.error ?? ''}
-                      </td>
+                      <td className="px-3 py-2 text-right text-gray-600">{log.count > 0 ? log.count.toLocaleString('ru-RU') : '—'}</td>
+                      <td className="px-3 py-2 text-right text-gray-400">{duration(log.startedAt, log.finishedAt)}</td>
+                      <td className="px-3 py-2 text-gray-400">{fmtTs(log.startedAt)}</td>
+                      <td className="px-3 py-2 text-red-500 max-w-xs truncate" title={log.error ?? ''}>{log.error ?? ''}</td>
                     </tr>
                   ))}
                 </tbody>

@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { getSession } from '@/lib/auth/session'
 
+function calcTierSalary(margin: number, tiers: { minMargin: number; salary: number }[]) {
+  return [...tiers].reverse().find(t => margin >= t.minMargin) ?? null
+}
+
 export async function GET(req: NextRequest) {
   const session = await getSession()
   if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -20,10 +24,66 @@ export async function GET(req: NextRequest) {
     ? nameFilter
     : { contains: nameFilter, mode: 'insensitive' }
 
-  const rows = await prisma.targetAction.findMany({
-    where: taWhere,
-    select: { employeeName: true, actionType: true, subType: true, source: true, amount: true, isTaken: true },
-  })
+  const shiftWhere: any  = { date: { gte: from, lte: to }, employeeName: { not: null } }
+  const orderWhere: any  = { order: { dateClose: { gte: from, lte: to }, isVisible: true, isReturn: false, managerName: { not: null } } }
+  const saleWhere: any   = { isWork: false, sale: { date: { gte: from, lte: to }, isReturn: false, sellerName: { not: null } } }
+  if (nameFilter) {
+    shiftWhere.employeeName      = nameFilter
+    orderWhere.order.managerName = nameFilter
+    saleWhere.sale.sellerName    = nameFilter
+  }
+
+  const [rows, tiers, allDates, scheduleSlots, orderPositions, salePositions] = await Promise.all([
+    prisma.targetAction.findMany({
+      where: taWhere,
+      select: { employeeName: true, actionType: true, subType: true, source: true, amount: true, isTaken: true },
+    }),
+    prisma.salaryTier.findMany({ orderBy: { minMargin: 'asc' } }),
+    prisma.scheduleSlot.findMany({
+      where: { date: { gte: from, lte: to }, employeeName: { not: null } },
+      select: { date: true },
+      distinct: ['date'],
+    }),
+    prisma.scheduleSlot.findMany({
+      where: shiftWhere,
+      select: { employeeName: true },
+    }),
+    prisma.orderPosition.findMany({
+      where: orderWhere,
+      select: { soldPrice: true, count: true, purchasePriceSumm: true, order: { select: { managerName: true } } },
+    }),
+    prisma.salePosition.findMany({
+      where: saleWhere,
+      select: { soldPrice: true, count: true, purchasePriceSumm: true, sale: { select: { sellerName: true } } },
+    }),
+  ])
+
+  const totalWorkingDays = allDates.length
+
+  const shiftsMap = new Map<string, number>()
+  for (const s of scheduleSlots) {
+    const n = s.employeeName!
+    shiftsMap.set(n, (shiftsMap.get(n) ?? 0) + 1)
+  }
+
+  const marginMap = new Map<string, number>()
+  for (const p of orderPositions) {
+    const n = p.order.managerName!
+    marginMap.set(n, (marginMap.get(n) ?? 0) + p.soldPrice * p.count - p.purchasePriceSumm)
+  }
+  for (const p of salePositions) {
+    const n = p.sale.sellerName!
+    marginMap.set(n, (marginMap.get(n) ?? 0) + p.soldPrice * p.count - p.purchasePriceSumm)
+  }
+
+  function getEstimatedSalary(name: string): number {
+    if (!tiers.length || totalWorkingDays === 0) return 0
+    const margin    = Math.round(marginMap.get(name) ?? 0)
+    const empShifts = shiftsMap.get(name) ?? 0
+    const tier      = calcTierSalary(margin, tiers)
+    if (!tier) return 0
+    return Math.round((tier.salary / totalWorkingDays) * empShifts)
+  }
 
   // ── Аккумулятор ───────────────────────────────────────────────────────────
   type Detail = { actionType: string; subType: string | null; count: number; amount: number }
@@ -70,15 +130,16 @@ export async function GET(req: NextRequest) {
 
   const stats = Object.entries(map)
     .map(([name, d]) => {
-      const totalRepair = d.repairEarned + d.repairTaken
-      const accrued  = d.bonus + d.addon - d.ndfl - d.fine - d.repairTaken
-      const остаток  = accrued - d.paidSalary
+      const totalRepair      = d.repairEarned + d.repairTaken
+      const estimatedSalary  = getEstimatedSalary(name)
+      const accrued          = estimatedSalary + d.bonus + d.addon - d.ndfl - d.fine - d.repairTaken
+      const остаток          = accrued - d.paidSalary
       return {
         name,
         bonus: d.bonus, addon: d.addon,
         ndfl: d.ndfl, fine: d.fine,
         repairEarned: d.repairEarned, repairTaken: d.repairTaken, totalRepair,
-        paidSalary: d.paidSalary, accrued, остаток,
+        paidSalary: d.paidSalary, estimatedSalary, accrued, остаток,
         details: Object.values(d.detailMap).sort((a, b) => {
           const ti = TYPE_ORDER.indexOf(a.actionType) - TYPE_ORDER.indexOf(b.actionType)
           return ti !== 0 ? ti : b.amount - a.amount

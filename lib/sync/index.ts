@@ -3,6 +3,7 @@ import { syncShops } from './shops'
 import { syncOrdersDelta, syncOrdersRange } from './orders'
 import { syncSalesDelta, syncSalesRange } from './sales'
 import { syncEmployees } from './employees'
+import { calcGangsterBonuses } from './gangster'
 
 async function logSync(entity: string, fn: () => Promise<number>) {
   const log = await prisma.syncLog.create({ data: { entity, status: 'running' } })
@@ -30,8 +31,11 @@ async function allShopIds() {
 // Каждые 15 минут
 export async function runDeltaSync() {
   const ids = await allShopIds()
-  await logSync('orders_delta',   () => syncOrdersDelta(ids))
-  await logSync('sales_delta',    () => syncSalesDelta(ids))
+  await logSync('orders_delta', () => syncOrdersDelta(ids))
+  await logSync('sales_delta',  () => syncSalesDelta(ids))
+  // Пересчёт бонуса Гангстер за последние 2 дня (покрывает дельту)
+  const fromDate = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000)
+  await calcGangsterBonuses({ fromDate })
 }
 
 // Раз в неделю — магазины + сотрудники

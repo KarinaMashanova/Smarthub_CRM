@@ -2,6 +2,26 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { getSession } from '@/lib/auth/session'
 
+const PAYMENT_ORDER = ['Наличные', 'Безнал', 'Счёт']
+
+function normalizePaymentType(value: string | null) {
+  if (!value) return 'Не указан'
+  const parts = Array.from(new Set(
+    value.split(',')
+      .map(p => p.trim())
+      .filter(Boolean)
+  ))
+  parts.sort((a, b) => {
+    const ai = PAYMENT_ORDER.indexOf(a)
+    const bi = PAYMENT_ORDER.indexOf(b)
+    if (ai === -1 && bi === -1) return a.localeCompare(b, 'ru')
+    if (ai === -1) return 1
+    if (bi === -1) return -1
+    return ai - bi
+  })
+  return parts.join(', ') || 'Не указан'
+}
+
 export async function GET(req: NextRequest) {
   const session = await getSession()
   if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -39,6 +59,8 @@ export async function GET(req: NextRequest) {
         shop: { select: { name: true } },
         revenue: true,
         date: true,
+        sellerName: true,
+        paymentType: true,
         positions: {
           select: {
             name: true,
@@ -56,6 +78,27 @@ export async function GET(req: NextRequest) {
     select: { name: true, group: true },
   })
   const catalogGroupByName = new Map(catalog.map(item => [item.name.toLowerCase(), item.group]))
+
+  function classifyPositionGroup(name: string) {
+    const lower = name.toLowerCase()
+    const catalogGroup = catalogGroupByName.get(lower)
+
+    if (lower.includes('настрой')) return 'Настройки'
+    if (lower.includes('комплексная настройка')) return 'Настройки'
+
+    if (lower.includes('дополнительная гарантия')) return 'Гарантии'
+    if (lower.includes('гаранти') && !lower.includes('без гарантии')) return 'Гарантии'
+
+    if (
+      catalogGroup?.toLowerCase().includes('страх') ||
+      lower.includes('страх') ||
+      lower.includes('защита экрана') ||
+      lower.includes('техника в безопасности') ||
+      lower.includes('сверх возможности')
+    ) return 'Страховки'
+
+    return catalogGroup ?? 'Без группы'
+  }
 
   // Маржа / ЗП на каждый заказ
   const enriched = orders.map(o => {
@@ -79,7 +122,7 @@ export async function GET(req: NextRequest) {
   // По дням (для графика)
   const daysInMonth = to.getDate()
   const byDay = Array.from({ length: daysInMonth }, (_, i) => ({
-    day: i + 1, revenue: 0, margin: 0, count: 0, salesRevenue: 0,
+    day: i + 1, revenue: 0, margin: 0, count: 0, salesRevenue: 0, salesMargin: 0,
   }))
   for (const o of enriched) {
     if (!o.dateClose) continue
@@ -95,22 +138,51 @@ export async function GET(req: NextRequest) {
     const d = new Date(s.date).getDate() - 1
     if (d >= 0 && d < daysInMonth) {
       byDay[d].salesRevenue += s.revenue
+      byDay[d].salesMargin  += s.positions.reduce((acc, p) => acc + (p.soldPrice * p.count - p.purchasePriceSumm), 0)
     }
   }
 
-  // По менеджерам
-  const managerMap: Record<string, { name: string; count: number; revenue: number; margin: number; salary: number; vmr: number }> = {}
+  // По менеджерам: заказы + продажи в одной структуре
+  const managerMap: Record<string, {
+    name: string
+    orders: { count: number; revenue: number; margin: number; salary: number; vmr: number }
+    sales: { count: number; revenue: number; margin: number }
+    totalRevenue: number
+    totalMargin: number
+  }> = {}
+  const getManagerRow = (name: string) => {
+    if (!managerMap[name]) {
+      managerMap[name] = {
+        name,
+        orders: { count: 0, revenue: 0, margin: 0, salary: 0, vmr: 0 },
+        sales: { count: 0, revenue: 0, margin: 0 },
+        totalRevenue: 0,
+        totalMargin: 0,
+      }
+    }
+    return managerMap[name]
+  }
   for (const o of enriched) {
-    const n = o.managerName ?? '—'
-    if (!managerMap[n]) managerMap[n] = { name: n, count: 0, revenue: 0, margin: 0, salary: 0, vmr: 0 }
-    managerMap[n].count   += 1
-    managerMap[n].revenue += o.revenue
-    managerMap[n].margin  += o.margin ?? 0
-    managerMap[n].salary  += o.salary ?? 0
-    if (o.isHighMargin) managerMap[n].vmr += 1
+    const row = getManagerRow(o.managerName ?? '—')
+    row.orders.count   += 1
+    row.orders.revenue += o.revenue
+    row.orders.margin  += o.margin ?? 0
+    row.orders.salary  += o.salary ?? 0
+    row.totalRevenue   += o.revenue
+    row.totalMargin    += o.margin ?? 0
+    if (o.isHighMargin) row.orders.vmr += 1
+  }
+  for (const s of sales) {
+    const row = getManagerRow(s.sellerName ?? '—')
+    const saleMargin = s.positions.reduce((acc, p) => acc + (p.soldPrice * p.count - p.purchasePriceSumm), 0)
+    row.sales.count   += 1
+    row.sales.revenue += s.revenue
+    row.sales.margin  += saleMargin
+    row.totalRevenue  += s.revenue
+    row.totalMargin   += saleMargin
   }
   const byManager = Object.values(managerMap)
-    .sort((a, b) => b.revenue - a.revenue)
+    .sort((a, b) => b.totalRevenue - a.totalRevenue)
     .slice(0, 15)
 
   // По магазинам (заказы)
@@ -136,8 +208,8 @@ export async function GET(req: NextRequest) {
     salesMap[n].margin  += saleMargin
 
     for (const p of s.positions) {
-      if (p.isWork) continue
-      const group = catalogGroupByName.get(p.name.toLowerCase()) ?? 'Без группы'
+      const group = classifyPositionGroup(p.name)
+      if (p.isWork && group !== 'Настройки') continue
       if (!productGroupMap[group]) productGroupMap[group] = { name: group, count: 0, revenue: 0, margin: 0 }
       const revenue = p.soldPrice * p.count
       productGroupMap[group].count += p.count
@@ -170,9 +242,22 @@ export async function GET(req: NextRequest) {
     pivotMap[n][day].revenue += o.revenue
     pivotMap[n][day].margin  += o.margin ?? 0
   }
-  const byShopByDay = byShop.map(shop => ({
+  for (const s of sales) {
+    if (!s.date) continue
+    const n   = s.shop.name
+    const day = new Date(s.date).getDate()
+    if (!pivotMap[n]) pivotMap[n] = {}
+    if (!pivotMap[n][day]) pivotMap[n][day] = { revenue: 0, margin: 0 }
+    const saleMargin = s.positions.reduce((acc, p) => acc + (p.soldPrice * p.count - p.purchasePriceSumm), 0)
+    pivotMap[n][day].revenue += s.revenue
+    pivotMap[n][day].margin  += saleMargin
+  }
+  const byShopByDay = byShopSummary.map(shop => ({
     name: shop.name,
-    total: { revenue: shop.revenue, margin: shop.margin },
+    total: {
+      revenue: shop.orders.revenue + shop.sales.revenue,
+      margin: shop.orders.margin + shop.sales.margin,
+    },
     days: Array.from({ length: daysInMonth }, (_, i) => ({
       day: i + 1,
       ...(pivotMap[shop.name]?.[i + 1] ?? { revenue: 0, margin: 0 }),
@@ -186,11 +271,39 @@ export async function GET(req: NextRequest) {
     typeMap[t] = (typeMap[t] ?? 0) + o.revenue
   }
 
-  // Оплата
-  const payMap: Record<string, number> = {}
+  // Оплата: заказы + продажи в одной структуре
+  const payMap: Record<string, {
+    name: string
+    orders: { count: number; revenue: number }
+    sales: { count: number; revenue: number }
+    totalCount: number
+    totalRevenue: number
+  }> = {}
+  const getPayRow = (name: string) => {
+    if (!payMap[name]) {
+      payMap[name] = {
+        name,
+        orders: { count: 0, revenue: 0 },
+        sales: { count: 0, revenue: 0 },
+        totalCount: 0,
+        totalRevenue: 0,
+      }
+    }
+    return payMap[name]
+  }
   for (const o of enriched) {
-    const p = o.paymentType ?? 'Не указан'
-    payMap[p] = (payMap[p] ?? 0) + 1
+    const row = getPayRow(normalizePaymentType(o.paymentType))
+    row.orders.count += 1
+    row.orders.revenue += o.revenue
+    row.totalCount += 1
+    row.totalRevenue += o.revenue
+  }
+  for (const s of sales) {
+    const row = getPayRow(normalizePaymentType(s.paymentType))
+    row.sales.count += 1
+    row.sales.revenue += s.revenue
+    row.totalCount += 1
+    row.totalRevenue += s.revenue
   }
 
   return NextResponse.json({
@@ -202,6 +315,6 @@ export async function GET(req: NextRequest) {
     byShopByDay,
     byProductGroup: Object.values(productGroupMap).sort((a, b) => b.revenue - a.revenue),
     byType:    Object.entries(typeMap).map(([name, revenue]) => ({ name, revenue })).sort((a,b) => b.revenue - a.revenue),
-    byPayment: Object.entries(payMap).map(([name, count]) => ({ name, count })).sort((a,b) => b.count - a.count),
+    byPayment: Object.values(payMap).sort((a,b) => b.totalRevenue - a.totalRevenue),
   })
 }

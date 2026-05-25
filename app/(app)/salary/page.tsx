@@ -30,7 +30,7 @@ interface StatRow {
   name: string
   bonus: number; addon: number
   ndfl: number; fine: number; totalRepair: number; repairEarned: number; repairTaken: number
-  paidSalary: number; accrued: number; остаток: number
+  paidSalary: number; estimatedSalary: number; accrued: number; остаток: number
   details: StatDetail[]
 }
 interface Session { name: string; role: 'MANAGER' | 'ADMIN'; shopId?: string | null }
@@ -59,6 +59,12 @@ const SUB_TYPES: Record<string, string[]> = {
 }
 const MONTH_SHORT = ['Янв','Фев','Мар','Апр','Май','Июн','Июл','Авг','Сен','Окт','Ноя','Дек']
 
+const BONUS_CHIPS = [
+  { label: 'ВМР',       value: 'За ВМР' },
+  { label: 'Гангстер',  value: 'За Гангстера' },
+  { label: 'Наличность',value: 'За наличность' },
+]
+
 function toISO(d: Date) {
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
 }
@@ -71,7 +77,7 @@ function fmt(n: number) { return Math.abs(n).toLocaleString('ru-RU') + ' ₽' }
 
 function makeEmpty() {
   const today = toISO(new Date())
-  return { date: today, actionType: 'Выплата Зарплаты', subType: '', employeeName: '', amount: '', comment: '', responsibleName: '', paymentDate: today }
+  return { date: today, actionType: 'Выплата Зарплаты', subType: '', employeeName: '', amount: '', comment: '', paymentDate: today }
 }
 function makeEmptyRepair() {
   const today = toISO(new Date())
@@ -89,8 +95,7 @@ export default function SalaryPage() {
   const [employees, setEmployees] = useState<string[]>([])
   const [subTypes, setSubTypes]   = useState<string[]>([])
   const [admins, setAdmins]       = useState<AdminEmployee[]>([])
-  const [view, setView]           = useState<'list' | 'stats' | 'repairs'>('list')
-  const [filterVmr, setFilterVmr] = useState(false)
+  const [view, setView]           = useState<'list' | 'stats' | 'repairs' | 'salary'>('list')
 
   const [periodMode,     setPeriodMode]    = useState<'month' | 'today' | 'yesterday' | 'custom'>('month')
   const [selYear,        setSelYear]       = useState(now.getFullYear())
@@ -100,7 +105,27 @@ export default function SalaryPage() {
   const [filterEmployee, setFilterEmployee] = useState('')
   const [filterType,     setFilterType]    = useState('')
   const [filterSubType,  setFilterSubType] = useState('')
-  const [expandedStats,  setExpandedStats] = useState<Set<string>>(new Set())
+  const [expandedStats,     setExpandedStats]     = useState<Set<string>>(new Set())
+  const [expandedListGroups, setExpandedListGroups] = useState<Set<string>>(new Set())
+
+  // Salary progress
+  interface SalaryTier { minMargin: number; salary: number }
+  interface SalaryProgress {
+    employeeName: string; year: number; month: number
+    margin: number; currentTier: SalaryTier | null; nextTier: SalaryTier | null
+    totalWorkingDays: number; employeeShifts: number
+    perShift: number; estimatedSalary: number; tiersCount: number
+  }
+  interface SalaryRow {
+    name: string; margin: number; empShifts: number
+    currentTier: SalaryTier | null; nextTier: SalaryTier | null; estimatedSalary: number
+  }
+  interface SalaryAll {
+    all: true; year: number; month: number
+    totalWorkingDays: number; tiersCount: number; rows: SalaryRow[]
+  }
+  const [salaryProgress, setSalaryProgress] = useState<SalaryProgress | SalaryAll | null>(null)
+  const [salaryLoading,  setSalaryLoading]  = useState(false)
 
   // Add action modal
   const [showModal, setShowModal]   = useState(false)
@@ -134,6 +159,9 @@ export default function SalaryPage() {
 
   function toggleExpandStats(name: string) {
     setExpandedStats(prev => { const n = new Set(prev); n.has(name) ? n.delete(name) : n.add(name); return n })
+  }
+  function toggleListGroup(key: string) {
+    setExpandedListGroups(prev => { const n = new Set(prev); n.has(key) ? n.delete(key) : n.add(key); return n })
   }
 
   useEffect(() => {
@@ -181,11 +209,23 @@ export default function SalaryPage() {
       .catch(() => setLoading(false))
   }, [listFrom, listTo, filterEmployee])
 
+  const loadSalary = useCallback(() => {
+    setSalaryLoading(true)
+    const p = new URLSearchParams({ year: String(selYear), month: String(selMonth + 1) })
+    // Для сессии с ролью ADMIN — грузим всех
+    if (session?.role === 'ADMIN') p.set('all', 'true')
+    fetch(`/api/salary-progress?${p}`)
+      .then(r => r.json())
+      .then(d => { setSalaryProgress(d); setSalaryLoading(false) })
+      .catch(() => setSalaryLoading(false))
+  }, [selYear, selMonth, session?.role])
+
   useEffect(() => {
-    if (view === 'list') loadList()
-    else if (view === 'stats') loadStats()
-    else loadRepairs()
-  }, [view, loadList, loadStats, loadRepairs])
+    if (view === 'list')   loadList()
+    else if (view === 'stats')   loadStats()
+    else if (view === 'repairs') loadRepairs()
+    else if (view === 'salary')  loadSalary()
+  }, [view, loadList, loadStats, loadRepairs, loadSalary])
 
   // Поиск заказа по номеру
   useEffect(() => {
@@ -206,7 +246,7 @@ export default function SalaryPage() {
     setSaving(true)
     await fetch('/api/target-actions', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(form),
+      body: JSON.stringify({ ...form, responsibleName: session?.name ?? null }),
     })
     setShowModal(false); setSaving(false); loadList()
   }
@@ -252,7 +292,7 @@ export default function SalaryPage() {
     loadRepairs()
   }
 
-  const filteredActions = filterVmr ? actions.filter(a => a.isHighMargin) : actions
+  const filteredActions = actions
 
   const totals = filteredActions.reduce((acc, a) => {
     if (a.actionType === 'Штраф') acc.fines += a.amount
@@ -277,12 +317,12 @@ export default function SalaryPage() {
         <div className="flex items-center gap-2 pb-2 flex-wrap">
           <h1 className="font-semibold text-gray-900 text-sm shrink-0">Целевые действия</h1>
           <div className="flex gap-0.5 bg-gray-100 rounded-lg p-0.5">
-            {(['list', 'stats', 'repairs'] as const).map(v => (
+            {(['list', 'stats', 'repairs', 'salary'] as const).map(v => (
               <button key={v} onClick={() => setView(v)}
                 className={`px-2.5 py-0.5 rounded-md text-xs font-medium transition-colors ${
                   view === v ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
                 }`}>
-                {v === 'list' ? 'Список' : v === 'stats' ? 'Статистика' : 'Ремонты'}
+                {v === 'list' ? 'Список' : v === 'stats' ? 'Статистика' : v === 'repairs' ? 'Ремонты' : 'Оклад'}
               </button>
             ))}
           </div>
@@ -307,24 +347,26 @@ export default function SalaryPage() {
         </div>
         {/* Строка 2: стандартный фильтр дат + дополнительные фильтры */}
         <div className="flex items-center gap-1.5 flex-wrap">
-          <div className="flex gap-0.5 bg-gray-100 rounded-lg p-0.5">
-            {([['month','Месяц'],['today','Сегодня'],['yesterday','Вчера'],['custom','Период']] as const).map(([mode, label]) => (
-              <button key={mode} onClick={() => {
-                if (mode === 'custom') { setPeriodMode('custom'); setCustomFrom(listFrom); setCustomTo(listTo) }
-                else setPeriodMode(mode)
-              }}
-                className={`px-2.5 py-0.5 rounded-md text-xs font-medium transition-colors ${
-                  periodMode === mode ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
-                }`}>
-                {label}
-              </button>
-            ))}
-          </div>
-          {periodMode === 'month' ? (
+          {view !== 'salary' && (
+            <div className="flex gap-0.5 bg-gray-100 rounded-lg p-0.5">
+              {([['month','Месяц'],['today','Сегодня'],['yesterday','Вчера'],['custom','Период']] as const).map(([mode, label]) => (
+                <button key={mode} onClick={() => {
+                  if (mode === 'custom') { setPeriodMode('custom'); setCustomFrom(listFrom); setCustomTo(listTo) }
+                  else setPeriodMode(mode)
+                }}
+                  className={`px-2.5 py-0.5 rounded-md text-xs font-medium transition-colors ${
+                    periodMode === mode ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+                  }`}>
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
+          {(periodMode === 'month' || view === 'salary') ? (
             <>
               <select value={selYear} onChange={e => setSelYear(+e.target.value)}
                 className="h-7 px-2 text-xs rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#FFD600]">
-                {[2025, 2026, 2027].map(y => <option key={y} value={y}>{y}</option>)}
+                {[2026].map(y => <option key={y} value={y}>{y}</option>)}
               </select>
               <select value={selMonth} onChange={e => setSelMonth(+e.target.value)}
                 className="h-7 px-2 text-xs rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#FFD600]">
@@ -344,7 +386,7 @@ export default function SalaryPage() {
               {periodMode === 'today' ? todayISO : yesterdayISO}
             </span>
           )}
-          {isAdmin && (
+          {isAdmin && view !== 'salary' && (
             <select value={filterEmployee} onChange={e => setFilterEmployee(e.target.value)}
               className="h-7 px-2 text-xs rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#FFD600] max-w-[160px]">
               <option value="">Все сотрудники</option>
@@ -358,17 +400,25 @@ export default function SalaryPage() {
                 <option value="">Все типы</option>
                 {ACTION_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
               </select>
-              <select value={filterSubType} onChange={e => setFilterSubType(e.target.value)}
+              <select value={filterSubType} onChange={e => { setFilterSubType(e.target.value); if (e.target.value) setFilterType('Бонус') }}
                 className="h-7 px-2 text-xs rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#FFD600] max-w-[160px]">
                 <option value="">Все виды</option>
                 {subTypes.map(s => <option key={s} value={s}>{s}</option>)}
               </select>
-              <button onClick={() => setFilterVmr(v => !v)}
-                className={`h-7 px-2 text-xs rounded-lg border font-medium transition-colors ${
-                  filterVmr ? 'bg-amber-100 border-amber-300 text-amber-800' : 'border-gray-200 text-gray-500 hover:bg-gray-100'
-                }`}>
-                ВМР
-              </button>
+              {BONUS_CHIPS.map(chip => (
+                <button key={chip.value}
+                  onClick={() => {
+                    if (filterSubType === chip.value) { setFilterSubType(''); setFilterType('') }
+                    else { setFilterSubType(chip.value); setFilterType('Бонус') }
+                  }}
+                  className={`h-7 px-2 text-xs rounded-lg border font-medium transition-colors ${
+                    filterSubType === chip.value
+                      ? 'bg-green-100 border-green-300 text-green-800'
+                      : 'border-gray-200 text-gray-500 hover:bg-gray-100'
+                  }`}>
+                  {chip.label}
+                </button>
+              ))}
             </>
           )}
         </div>
@@ -432,15 +482,6 @@ export default function SalaryPage() {
                 onChange={e => setForm(f => ({...f, comment: e.target.value}))}
                 placeholder="необязательно"
                 className="px-3 py-2 text-sm rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#FFD600]"/>
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-medium text-gray-700">Ответственный</label>
-              <select value={form.responsibleName}
-                onChange={e => setForm(f => ({...f, responsibleName: e.target.value}))}
-                className="px-3 py-2 text-sm rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#FFD600]">
-                <option value="">— не указан —</option>
-                {admins.map(a => <option key={a.id} value={a.name}>{a.name}</option>)}
-              </select>
             </div>
             <div className="flex gap-2 pt-1">
               <button type="submit" disabled={saving}
@@ -649,10 +690,11 @@ export default function SalaryPage() {
           stats.length === 0 ? (
             <div className="text-center py-20 text-gray-400 text-sm">Нет данных за выбранный период</div>
           ) : (
-            <table className="w-full min-w-[880px] text-xs border-collapse">
+            <table className="w-full min-w-[1020px] text-xs border-collapse">
               <thead className="sticky top-0 z-10">
                 <tr className="bg-gray-50 border-b border-gray-200 text-left">
                   <th className="px-3 py-1.5 font-medium text-gray-500">Сотрудник</th>
+                  <th className="px-3 py-1.5 font-medium text-gray-500 text-right w-28">Оклад</th>
                   <th className="px-3 py-1.5 font-medium text-gray-500 text-right w-24">Бонусы</th>
                   <th className="px-3 py-1.5 font-medium text-gray-500 text-right w-28">Доначисл.</th>
                   <th className="px-3 py-1.5 font-medium text-gray-500 text-right w-20">НДФЛ</th>
@@ -676,6 +718,7 @@ export default function SalaryPage() {
                           <span className={`text-gray-300 transition-transform text-[10px] ${expanded ? 'rotate-90' : ''}`}>▶</span>
                           {s.name}
                         </td>
+                        <td className="px-3 py-1.5 text-right text-gray-700">{s.estimatedSalary > 0 ? fmt(s.estimatedSalary) : '—'}</td>
                         <td className="px-3 py-1.5 text-right text-green-600">{s.bonus > 0 ? fmt(s.bonus) : '—'}</td>
                         <td className="px-3 py-1.5 text-right text-blue-600">{s.addon > 0 ? fmt(s.addon) : '—'}</td>
                         <td className="px-3 py-1.5 text-right text-red-400">{s.ndfl > 0 ? fmt(s.ndfl) : '—'}</td>
@@ -697,7 +740,7 @@ export default function SalaryPage() {
                       </tr>
                       {expanded && (
                         <tr className="border-b border-gray-100 bg-gray-50/50">
-                          <td colSpan={10} className="px-6 py-2.5">
+                          <td colSpan={11} className="px-6 py-2.5">
                             <table className="w-full min-w-[620px] text-[11px]">
                               <thead>
                                 <tr className="text-gray-400 border-b border-gray-200">
@@ -743,6 +786,7 @@ export default function SalaryPage() {
               <tfoot>
                 <tr className="border-t-2 border-gray-200 bg-gray-50 font-semibold text-xs">
                   <td className="px-3 py-1.5 text-gray-700">Итого</td>
+                  <td className="px-3 py-1.5 text-right text-gray-700">{fmt(stats.reduce((s, r) => s + r.estimatedSalary, 0))}</td>
                   <td className="px-3 py-1.5 text-right text-green-600">{fmt(stats.reduce((s, r) => s + r.bonus, 0))}</td>
                   <td className="px-3 py-1.5 text-right text-blue-600">{fmt(stats.reduce((s, r) => s + r.addon, 0))}</td>
                   <td className="px-3 py-1.5 text-right text-red-400">{fmt(stats.reduce((s, r) => s + r.ndfl, 0))}</td>
@@ -755,14 +799,13 @@ export default function SalaryPage() {
               </tfoot>
             </table>
           )
-        ) : (
+        ) : view === 'list' ? (
           // ---- СПИСОК ----
           filteredActions.length === 0 ? (
             <div className="text-center py-20 text-gray-400 text-sm">
-              {filterVmr ? 'Нет ВМР-заказов за выбранный период' : 'Нет данных за выбранный период'}
+              {'Нет данных за выбранный период'}
             </div>
           ) : (() => {
-            // Группировка по дням
             const groups: { date: string; items: TargetAction[] }[] = []
             for (const a of filteredActions) {
               const day = (a.date ?? '').slice(0, 10)
@@ -770,79 +813,237 @@ export default function SalaryPage() {
               if (last && last.date === day) last.items.push(a)
               else groups.push({ date: day, items: [a] })
             }
-            const colCount = 6 + (isAdmin ? 3 : 0)
+            const colCount = isAdmin ? 4 : 3
             return (
-              <table className="w-full min-w-[760px] text-xs border-collapse">
+              <table className="w-full min-w-[560px] text-xs border-collapse">
                 <thead className="sticky top-0 z-10">
                   <tr className="bg-gray-50 border-b border-gray-200 text-left">
-                    <th className="px-3 py-1.5 font-medium text-gray-500 w-40">Тип</th>
-                    <th className="px-3 py-1.5 font-medium text-gray-500 w-36">Вид</th>
-                    {isAdmin && <th className="px-3 py-1.5 font-medium text-gray-500">Сотрудник</th>}
-                    <th className="px-3 py-1.5 font-medium text-gray-500 w-28 text-right">Сумма</th>
-                    <th className="px-3 py-1.5 font-medium text-gray-500">Комментарий</th>
-                    {isAdmin && <th className="px-3 py-1.5 font-medium text-gray-500 w-28">Ответственный</th>}
-                    {isAdmin && <th className="px-3 py-1.5 font-medium text-gray-500 w-14">Источник</th>}
-                    {isAdmin && <th className="px-3 py-1.5 font-medium text-gray-500 w-8"></th>}
+                    {isAdmin && <th className="px-3 py-1.5 font-medium text-gray-500 w-44">Сотрудник</th>}
+                    <th className="px-3 py-1.5 font-medium text-gray-500">Записи</th>
+                    <th className="px-3 py-1.5 font-medium text-gray-500 text-right w-28">Итого</th>
+                    <th className="w-6" />
                   </tr>
                 </thead>
                 <tbody>
-                  {groups.map(g => (
-                    <Fragment key={g.date}>
-                      <tr className="bg-gray-50/70 border-b border-gray-200">
-                        <td colSpan={colCount} className="px-3 py-1 text-[11px] font-semibold text-gray-500">
-                          {fmtDate(g.date)}
-                          <span className="ml-2 font-normal text-gray-400">{g.items.length} {g.items.length === 1 ? 'запись' : g.items.length < 5 ? 'записи' : 'записей'}</span>
-                        </td>
-                      </tr>
-                      {g.items.map(a => (
-                        <tr key={a.id}
-                          className={`border-b border-gray-100 hover:bg-gray-50/60 ${a.isHighMargin ? 'bg-amber-50/40' : ''}`}>
-                          <td className="px-3 py-1.5">
-                            <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${ACTION_COLORS[a.actionType] ?? 'bg-gray-100 text-gray-600'}`}>
-                              {a.actionType}
+                  {groups.map(g => {
+                    const empMap = new Map<string, TargetAction[]>()
+                    for (const a of g.items) {
+                      if (!empMap.has(a.employeeName)) empMap.set(a.employeeName, [])
+                      empMap.get(a.employeeName)!.push(a)
+                    }
+                    return (
+                      <Fragment key={g.date}>
+                        <tr className="bg-gray-50/70 border-b border-gray-200">
+                          <td colSpan={colCount} className="px-3 py-1 text-[11px] font-semibold text-gray-500">
+                            {fmtDate(g.date)}
+                            <span className="ml-2 font-normal text-gray-400">
+                              {g.items.length} {g.items.length === 1 ? 'запись' : g.items.length < 5 ? 'записи' : 'записей'}
+                              {isAdmin && empMap.size > 1 && ` · ${empMap.size} сотрудников`}
                             </span>
-                            {a.isHighMargin && (
-                              <span className="ml-1 text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 font-medium">ВМР</span>
-                            )}
                           </td>
-                          <td className="px-3 py-1.5 text-gray-500">{a.subType ?? <span className="text-gray-300">—</span>}</td>
-                          {isAdmin && <td className="px-3 py-1.5 font-medium text-gray-800">{a.employeeName}</td>}
-                          <td className={`px-3 py-2 text-right font-semibold ${AMOUNT_COLORS[a.actionType] ?? 'text-gray-700'}`}>
-                            {fmt(a.amount)}
-                          </td>
-                          <td className="px-3 py-1.5 text-gray-500">{a.comment ?? '—'}</td>
-                          {isAdmin && <td className="px-3 py-1.5 text-gray-400">{a.responsibleName ?? '—'}</td>}
-                          {isAdmin && (
-                            <td className="px-3 py-2">
-                              <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${
-                                a.source === 'IMPORT' ? 'bg-blue-50 text-blue-500'
-                                : a.source === 'AUTO' ? 'bg-emerald-50 text-emerald-600'
-                                : 'bg-gray-100 text-gray-400'
-                              }`}>
-                                {a.source === 'IMPORT' ? 'Импорт' : a.source === 'AUTO' ? 'Авто' : 'Вручную'}
-                              </span>
-                            </td>
-                          )}
-                          {isAdmin && (
-                            <td className="px-3 py-2">
-                              <button onClick={() => deleteAction(a.id)}
-                                className="text-gray-300 hover:text-red-400 transition-colors text-base leading-none">×</button>
-                            </td>
-                          )}
                         </tr>
-                      ))}
-                    </Fragment>
-                  ))}
+                        {Array.from(empMap.entries()).map(([empName, empItems]) => {
+                          const groupKey = `${g.date}_${empName}`
+                          const isExpanded = expandedListGroups.has(groupKey)
+                          const typeAgg = new Map<string, { count: number; total: number }>()
+                          for (const a of empItems) {
+                            const ex = typeAgg.get(a.actionType) ?? { count: 0, total: 0 }
+                            typeAgg.set(a.actionType, { count: ex.count + 1, total: ex.total + a.amount })
+                          }
+                          const totalAmount = empItems.reduce((s, a) => s + a.amount, 0)
+                          const hasVmr = empItems.some(a => a.isHighMargin)
+                          return (
+                            <Fragment key={groupKey}>
+                              <tr
+                                onClick={() => toggleListGroup(groupKey)}
+                                className={`border-b border-gray-100 cursor-pointer select-none ${isExpanded ? 'bg-gray-50' : 'hover:bg-gray-50/60'}`}
+                              >
+                                {isAdmin && (
+                                  <td className="px-3 py-2 font-medium text-gray-800">
+                                    {empName}
+                                    {hasVmr && <span className="ml-1.5 text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 font-medium">ВМР</span>}
+                                  </td>
+                                )}
+                                <td className="px-3 py-2">
+                                  <div className="flex flex-wrap gap-1">
+                                    {Array.from(typeAgg.entries()).map(([type, { count, total }]) => (
+                                      <span key={type} className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${ACTION_COLORS[type] ?? 'bg-gray-100 text-gray-600'}`}>
+                                        {type}{count > 1 ? ` ×${count}` : ''} · {fmt(total)}
+                                      </span>
+                                    ))}
+                                  </div>
+                                </td>
+                                <td className="px-3 py-2 text-right font-semibold text-gray-700">{fmt(totalAmount)}</td>
+                                <td className="px-3 py-2 text-center text-gray-300 text-[10px]">{isExpanded ? '▲' : '▼'}</td>
+                              </tr>
+                              {isExpanded && empItems.map(a => (
+                                <tr key={a.id} className={`border-b border-gray-100 ${a.isHighMargin ? 'bg-amber-50/30' : 'bg-gray-50/30'}`}>
+                                  {isAdmin && <td className="px-3 py-1.5" />}
+                                  <td className="pl-5 pr-3 py-1.5">
+                                    <div className="flex items-center gap-1.5 flex-wrap">
+                                      <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${ACTION_COLORS[a.actionType] ?? 'bg-gray-100 text-gray-600'}`}>
+                                        {a.actionType}
+                                      </span>
+                                      {a.isHighMargin && <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 font-medium">ВМР</span>}
+                                      {a.subType && <span className="text-gray-500">{a.subType}</span>}
+                                      {a.comment && <span className="text-gray-400">— {a.comment}</span>}
+                                      {isAdmin && a.source === 'AUTO'   && <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-600 font-medium">Авто</span>}
+                                      {isAdmin && a.source === 'IMPORT' && <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-500 font-medium">Импорт</span>}
+                                      {isAdmin && a.responsibleName && <span className="text-gray-400 text-[10px]">· {a.responsibleName}</span>}
+                                    </div>
+                                  </td>
+                                  <td className={`px-3 py-1.5 text-right font-semibold ${AMOUNT_COLORS[a.actionType] ?? 'text-gray-700'}`}>
+                                    {fmt(a.amount)}
+                                  </td>
+                                  <td className="px-3 py-1.5 text-center">
+                                    {isAdmin && (
+                                      <button onClick={e => { e.stopPropagation(); deleteAction(a.id) }}
+                                        className="text-gray-300 hover:text-red-400 transition-colors text-base leading-none">×</button>
+                                    )}
+                                  </td>
+                                </tr>
+                              ))}
+                            </Fragment>
+                          )
+                        })}
+                      </Fragment>
+                    )
+                  })}
                 </tbody>
               </table>
             )
           })()
-        )}
+        ) : view === 'salary' ? (() => {
+          // ---- ОКЛАД ----
+          const MONTH_NAMES = ['Январь','Февраль','Март','Апрель','Май','Июнь','Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь']
+
+          if (salaryLoading) return (
+            <div className="flex items-center justify-center h-full text-gray-400 text-sm">Загрузка...</div>
+          )
+          if (!salaryProgress || salaryProgress.tiersCount === 0) return (
+            <div className="flex items-center justify-center h-full text-gray-400 text-sm">Уровни оклада не настроены</div>
+          )
+
+          if ('all' in salaryProgress) {
+            const sp = salaryProgress
+            return (
+              <>
+                <div className="px-4 py-2.5 border-b border-gray-100 text-xs text-gray-400">
+                  {MONTH_NAMES[sp.month - 1]} {sp.year} · рабочих дней: {sp.totalWorkingDays}
+                </div>
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="bg-gray-50 text-left border-b border-gray-100">
+                      <th className="px-4 py-2 font-medium text-gray-500">Сотрудник</th>
+                      <th className="px-3 py-2 font-medium text-gray-500 text-right">Маржа</th>
+                      <th className="px-3 py-2 font-medium text-gray-500 text-right">Оклад уровня</th>
+                      <th className="px-3 py-2 font-medium text-gray-500 text-right">Смен</th>
+                      <th className="px-3 py-2 font-medium text-gray-500 text-right">До след. уровня</th>
+                      <th className="px-3 py-2 font-medium text-gray-500 text-right">Расчётный оклад</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {sp.rows.map((r, i) => (
+                      <tr key={r.name} className={`border-b border-gray-100 ${i % 2 === 1 ? 'bg-gray-50/40' : ''}`}>
+                        <td className="px-4 py-2.5 font-medium text-gray-800">{r.name}</td>
+                        <td className="px-3 py-2.5 text-right text-gray-700">{r.margin.toLocaleString('ru-RU')} ₽</td>
+                        <td className="px-3 py-2.5 text-right text-gray-700">
+                          {r.currentTier ? r.currentTier.salary.toLocaleString('ru-RU') + ' ₽' : '—'}
+                        </td>
+                        <td className="px-3 py-2.5 text-right text-gray-500">
+                          {r.empShifts} / {sp.totalWorkingDays}
+                        </td>
+                        <td className="px-3 py-2.5 text-right">
+                          {r.nextTier
+                            ? <span className="text-amber-700">{(r.nextTier.minMargin - r.margin).toLocaleString('ru-RU')} ₽</span>
+                            : <span className="text-green-600 font-medium">макс.</span>}
+                        </td>
+                        <td className="px-3 py-2.5 text-right font-semibold text-gray-900">
+                          {r.estimatedSalary > 0 ? r.estimatedSalary.toLocaleString('ru-RU') + ' ₽' : '—'}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr className="border-t-2 border-gray-200 bg-gray-50 font-semibold text-xs">
+                      <td className="px-4 py-2 text-gray-700">Итого</td>
+                      <td className="px-3 py-2 text-right text-gray-700">{sp.rows.reduce((s, r) => s + r.margin, 0).toLocaleString('ru-RU')} ₽</td>
+                      <td colSpan={3}/>
+                      <td className="px-3 py-2 text-right text-gray-900">{sp.rows.reduce((s, r) => s + r.estimatedSalary, 0).toLocaleString('ru-RU')} ₽</td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </>
+            )
+          }
+
+          const p = salaryProgress
+          const tierSalary  = p.currentTier?.salary ?? 0
+          const toNext      = p.nextTier ? p.nextTier.minMargin - p.margin : null
+          const progressPct = p.nextTier
+            ? Math.min(100, ((p.margin - (p.currentTier?.minMargin ?? 0)) / (p.nextTier.minMargin - (p.currentTier?.minMargin ?? 0))) * 100)
+            : 100
+          return (
+            <div className="px-4 py-4 md:px-6">
+              <div className="max-w-sm space-y-4">
+                <p className="text-xs text-gray-400">{MONTH_NAMES[p.month - 1]} {p.year}</p>
+                <div className="rounded-xl border border-gray-100 p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-xs text-gray-400">Текущий уровень</p>
+                      <p className="text-lg font-bold text-gray-900 mt-0.5">
+                        {tierSalary > 0 ? tierSalary.toLocaleString('ru-RU') + ' ₽/мес' : 'Ниже первого уровня'}
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-xs text-gray-400">Маржа за месяц</p>
+                      <p className="text-lg font-bold text-gray-900 mt-0.5">{p.margin.toLocaleString('ru-RU')} ₽</p>
+                    </div>
+                  </div>
+                  {p.nextTier ? (
+                    <div>
+                      <div className="flex justify-between text-[11px] text-gray-400 mb-1">
+                        <span>{(p.currentTier?.minMargin ?? 0).toLocaleString('ru-RU')} ₽</span>
+                        <span>{p.nextTier.minMargin.toLocaleString('ru-RU')} ₽</span>
+                      </div>
+                      <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+                        <div className="h-full bg-[#FFD600] rounded-full" style={{ width: `${progressPct}%` }} />
+                      </div>
+                      <p className="text-xs text-gray-500 mt-1.5">
+                        До уровня <span className="font-medium">{p.nextTier.salary.toLocaleString('ru-RU')} ₽/мес</span>: ещё&nbsp;
+                        <span className="font-semibold text-gray-800">{toNext!.toLocaleString('ru-RU')} ₽ маржи</span>
+                      </p>
+                    </div>
+                  ) : (
+                    <p className="text-xs text-green-600 font-medium">Максимальный уровень достигнут</p>
+                  )}
+                </div>
+                <div className="rounded-xl border border-gray-100 p-4">
+                  <p className="text-xs text-gray-400 mb-3">Расчёт оклада</p>
+                  <div className="space-y-2 text-sm text-gray-700">
+                    <div className="flex justify-between">
+                      <span className="text-gray-500">Ставка в день</span>
+                      <span>{p.totalWorkingDays > 0 ? `${tierSalary.toLocaleString('ru-RU')} ÷ ${p.totalWorkingDays} = ${p.perShift.toLocaleString('ru-RU')} ₽` : '—'}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-500">Смен отработано</span>
+                      <span>{p.employeeShifts} из {p.totalWorkingDays}</span>
+                    </div>
+                    <div className="flex justify-between border-t border-gray-100 pt-2 font-semibold">
+                      <span>Расчётный оклад</span>
+                      <span className="text-gray-900">{p.estimatedSalary.toLocaleString('ru-RU')} ₽</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )
+        })() : null}
       </div>
 
       {view === 'list' && (
         <div className="shrink-0 border-t border-gray-100 px-4 py-2 flex items-center justify-between text-xs text-gray-400">
-          <span>{filterVmr ? `${filteredActions.length} из ${total}` : total} записей</span>
+          <span>{total} записей</span>
           <span className="font-medium text-gray-600">
             Итого: +{totals.income.toLocaleString('ru-RU')} ₽
             {totals.fines > 0 && ` / штрафы: −${totals.fines.toLocaleString('ru-RU')} ₽`}
