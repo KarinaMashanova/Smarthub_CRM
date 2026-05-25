@@ -1,6 +1,5 @@
 import { getSession } from '@/lib/auth/session'
 import { redirect } from 'next/navigation'
-import Link from 'next/link'
 import { ReactNode } from 'react'
 import { NavLinks } from './components/NavLinks'
 
@@ -45,12 +44,12 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
             <p className="text-[11px] text-gray-400 truncate">{session.name}</p>
           </div>
         </div>
-        <Link
+        <a
           href="/api/auth/logout"
           className="px-3 py-2 rounded-xl text-xs text-gray-500 bg-gray-50 hover:bg-gray-100"
         >
           Выйти
-        </Link>
+        </a>
       </header>
 
       {/* Sidebar */}
@@ -75,7 +74,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
             <p className="text-xs font-medium text-gray-800 truncate">{session.name}</p>
             <p className="text-[11px] text-gray-400 mt-0.5">{session.role === 'ADMIN' ? 'Администратор' : 'Менеджер'}</p>
           </div>
-          <Link
+          <a
             href="/api/auth/logout"
             className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
           >
@@ -83,7 +82,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
               <path d="M9 10l3-3-3-3M12 7H5M5 2H3a1 1 0 00-1 1v8a1 1 0 001 1h2" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
             </svg>
             Выйти
-          </Link>
+          </a>
         </div>
       </aside>
 
