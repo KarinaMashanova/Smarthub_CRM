@@ -470,7 +470,7 @@ export default function OrdersPage() {
                     {paymentTypes.map(p => <option key={p} value={p}>{p}</option>)}
                   </select>
                 </th>
-                <th className="px-2 py-2.5 font-medium text-gray-500 w-24 text-right">Сумма</th>
+                <th className="px-2 py-2.5 font-medium text-gray-500 w-24 text-right">Выручка</th>
                 <th className="px-2 py-2.5 font-medium text-gray-500 w-32 text-right">Маржа</th>
                 <th className="px-2 py-2.5 font-medium text-gray-500 w-28 text-right">Бонусы</th>
               </tr>

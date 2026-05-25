@@ -8,7 +8,7 @@ const NAV_ADMIN = [
   { href: '/sales',          label: 'Продажи',        icon: 'sales' },
   { href: '/cash',           label: 'Касса',           icon: 'wallet' },
   { href: '/schedule',       label: 'График смен',    icon: 'calendar' },
-  { href: '/salary',         label: 'ЗП и бонусы',   icon: 'salary' },
+  { href: '/salary',         label: 'Целевые действия',   icon: 'salary' },
   { href: '/reports',        label: 'Отчёты',         icon: 'chart' },
   { href: '/knowledge',      label: 'База знаний',    icon: 'book' },
   { href: '/admin/managers', label: 'Сотрудники',     icon: 'people' },
@@ -20,7 +20,7 @@ const NAV_MANAGER = [
   { href: '/sales',     label: 'Продажи',      icon: 'sales' },
   { href: '/cash',      label: 'Касса',         icon: 'wallet' },
   { href: '/schedule',  label: 'График смен',  icon: 'calendar' },
-  { href: '/salary',    label: 'ЗП и бонусы', icon: 'salary' },
+  { href: '/salary',    label: 'Целевые действия', icon: 'salary' },
   { href: '/knowledge', label: 'База знаний',  icon: 'book' },
 ]
 

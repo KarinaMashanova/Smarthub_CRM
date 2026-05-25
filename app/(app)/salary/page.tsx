@@ -278,7 +278,7 @@ export default function SalaryPage() {
       <div className="shrink-0 border-b border-gray-100 px-4 pt-2.5 pb-2">
         {/* Строка 1: заголовок + вкладки + действия */}
         <div className="flex items-center gap-2 pb-2 flex-wrap">
-          <h1 className="font-semibold text-gray-900 text-sm shrink-0">ЗП и бонусы</h1>
+          <h1 className="font-semibold text-gray-900 text-sm shrink-0">Целевые действия</h1>
           <div className="flex gap-0.5 bg-gray-100 rounded-lg p-0.5">
             {(['list', 'stats', 'repairs'] as const).map(v => (
               <button key={v} onClick={() => setView(v)}
@@ -846,7 +846,7 @@ export default function SalaryPage() {
 
       {showHelp && (
         <HelpModal
-          title="ЗП и бонусы — справка"
+          title="Целевые действия — справка"
           color="bg-blue-50 border-blue-100"
           dot="bg-blue-400"
           items={HELP_ITEMS}
