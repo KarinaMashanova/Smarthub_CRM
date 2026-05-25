@@ -84,6 +84,7 @@ export default function SalesPage() {
   const [total,        setTotal]        = useState(0)
   const [pages,        setPages]        = useState(1)
   const [loading,      setLoading]      = useState(true)
+  const [loadError,    setLoadError]    = useState('')
   const [expanded,     setExpanded]     = useState<Set<string>>(new Set())
   const [view,         setView]         = useState<'list' | 'stats'>('list')
   const [showHelp,     setShowHelp]     = useState(false)
@@ -116,11 +117,12 @@ export default function SalesPage() {
              : monthTo
 
   useEffect(() => {
-    fetch('/api/auth/me').then(r => r.ok ? r.json() : null).then(setSession)
+    fetch('/api/auth/me', { cache: 'no-store' }).then(r => r.ok ? r.json() : null).then(setSession)
   }, [])
 
   const load = useCallback(async () => {
     setLoading(true)
+    setLoadError('')
     try {
       const params = new URLSearchParams({
         from, to: `${to}T23:59:59`,
@@ -133,7 +135,7 @@ export default function SalesPage() {
         rcBonusMode,
         creditMode,
       })
-      const res = await fetch(`/api/sales?${params}`)
+      const res = await fetch(`/api/sales?${params}`, { cache: 'no-store' })
       if (res.ok) {
         const d = await res.json()
         setSales(d.sales ?? [])
@@ -143,7 +145,18 @@ export default function SalesPage() {
         setPaymentTypes(d.paymentTypes ?? [])
         setTotal(d.total ?? 0)
         setPages(d.pages ?? 1)
+      } else if (res.status === 401) {
+        setSales([])
+        setSummary(emptySummary)
+        setTotal(0)
+        setPages(1)
+        setLoadError('Сессия истекла. Выйдите и войдите заново.')
+      } else {
+        const data = await res.json().catch(() => null)
+        setLoadError(data?.error ?? `Ошибка загрузки продаж: HTTP ${res.status}`)
       }
+    } catch (e: any) {
+      setLoadError(e?.message ?? 'Ошибка загрузки продаж')
     } finally {
       setLoading(false)
     }
@@ -193,6 +206,11 @@ export default function SalesPage() {
             className="order-last w-full px-2.5 py-1 text-xs rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#FFD600] md:order-none md:ml-auto md:w-56"/>
 
           {loading && <span className="text-xs text-gray-400 shrink-0">Загрузка...</span>}
+          {session && (
+            <span className="text-[11px] text-gray-300 shrink-0">
+              {session.role === 'ADMIN' ? 'Админ' : `Менеджер: ${session.name}`}
+            </span>
+          )}
 
           <button onClick={() => setShowHelp(true)} title="Справка"
             className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors">
@@ -294,10 +312,20 @@ export default function SalesPage() {
 
       {/* Таблица */}
       <div className="flex-1 overflow-auto">
-        {loading && sales.length === 0 ? (
+        {loadError ? (
+          <div className="flex flex-col items-center justify-center h-40 text-sm">
+            <p className="text-red-500">{loadError}</p>
+            <a href="/api/auth/logout" className="mt-2 text-xs text-gray-500 underline">Перезайти</a>
+          </div>
+        ) : loading && sales.length === 0 ? (
           <div className="text-center py-16 text-gray-400 text-sm">Загрузка...</div>
         ) : sales.length === 0 ? (
-          <div className="flex items-center justify-center h-40 text-gray-400 text-sm">Продаж за период не найдено</div>
+          <div className="flex flex-col items-center justify-center h-40 text-gray-400 text-sm">
+            <p>Продаж за период не найдено</p>
+            {session?.role === 'MANAGER' && (
+              <p className="mt-1 text-xs">Показаны только продажи менеджера: {session.name}</p>
+            )}
+          </div>
         ) : (
           <table className="w-full min-w-[860px] text-xs border-collapse">
             <thead className="sticky top-0 z-10">
