@@ -76,6 +76,7 @@ export default function SchedulePage() {
   const [weekStart, setWeekStart] = useState<Date>(() => getMondayOf(new Date()))
   const [slots, setSlots]         = useState<Slot[]>([])
   const [loadingGrid, setLoadingGrid] = useState(true)
+  const [gridError, setGridError] = useState('')
   const [editing, setEditing]     = useState<number|null>(null)
   const [editValue, setEditValue] = useState('')
   const [empList, setEmpList]     = useState<string[]>([])
@@ -100,6 +101,7 @@ export default function SchedulePage() {
   const [stats, setStats]             = useState<ShiftStat[]>([])
   const [allLocs, setAllLocs]         = useState<string[]>([])
   const [loadingStats, setLoadingStats] = useState(false)
+  const [statsError, setStatsError] = useState('')
   const [expandedRow, setExpandedRow]   = useState<string|null>(null)
   const [statsView, setStatsView]       = useState<'shifts'|'leave'>('shifts')
   const [statsSearch, setStatsSearch]   = useState('')
@@ -121,14 +123,36 @@ export default function SchedulePage() {
   const STATS_YEARS = [2025, 2026]
 
   useEffect(() => {
-    fetch('/api/auth/me').then(r => r.ok ? r.json() : null).then(setSession)
-    fetch('/api/schedule/employees').then(r => r.json()).then(setEmpList).catch(()=>{})
+    fetch('/api/auth/me', { cache: 'no-store' }).then(r => r.ok ? r.json() : null).then(setSession)
+    fetch('/api/schedule/employees', { cache: 'no-store' })
+      .then(r => r.ok ? r.json() : [])
+      .then(d => setEmpList(Array.isArray(d) ? d : []))
+      .catch(()=> setEmpList([]))
   }, [])
 
-  function loadGrid() {
+  async function loadGrid() {
     setLoadingGrid(true)
-    fetch(`/api/schedule?from=${toISO(weekDays[0])}&to=${toISO(weekDays[6])}`)
-      .then(r => r.json()).then(d => { setSlots(d); setLoadingGrid(false) })
+    setGridError('')
+    try {
+      const res = await fetch(`/api/schedule?from=${toISO(weekDays[0])}&to=${toISO(weekDays[6])}`, { cache: 'no-store' })
+      const d = await res.json().catch(() => null)
+      if (!res.ok) {
+        setSlots([])
+        setGridError(res.status === 401 ? 'Сессия истекла. Выйдите и войдите заново.' : (d?.error ?? `Ошибка загрузки графика: HTTP ${res.status}`))
+        return
+      }
+      if (!Array.isArray(d)) {
+        setSlots([])
+        setGridError('API графика вернул некорректный ответ')
+        return
+      }
+      setSlots(d)
+    } catch (e: any) {
+      setSlots([])
+      setGridError(e?.message ?? 'Ошибка загрузки графика')
+    } finally {
+      setLoadingGrid(false)
+    }
   }
 
   useEffect(() => { loadGrid() }, [weekStart])
@@ -136,11 +160,22 @@ export default function SchedulePage() {
   useEffect(() => {
     if (tab !== 'stats') return
     setLoadingStats(true)
+    setStatsError('')
     const p = new URLSearchParams({ from: toISO(statsFrom), to: toISO(statsTo) })
     if (statsLoc) p.set('location', statsLoc)
-    fetch(`/api/schedule/stats?${p}`).then(r => r.json()).then(d => {
-      setStats(d.stats); setAllLocs(d.locations); setLoadingStats(false)
-    })
+    fetch(`/api/schedule/stats?${p}`, { cache: 'no-store' })
+      .then(async r => {
+        const d = await r.json().catch(() => null)
+        if (!r.ok) throw new Error(r.status === 401 ? 'Сессия истекла. Выйдите и войдите заново.' : (d?.error ?? `Ошибка статистики: HTTP ${r.status}`))
+        setStats(Array.isArray(d?.stats) ? d.stats : [])
+        setAllLocs(Array.isArray(d?.locations) ? d.locations : [])
+      })
+      .catch(e => {
+        setStats([])
+        setAllLocs([])
+        setStatsError(e?.message ?? 'Ошибка загрузки статистики')
+      })
+      .finally(() => setLoadingStats(false))
   }, [tab, statsMonth, statsYear, filterMode, customFrom, customTo, statsLoc])
 
   // Pre-fill leave dates when opening the form
@@ -227,7 +262,9 @@ export default function SchedulePage() {
     const p = new URLSearchParams({ from: toISO(statsFrom), to: toISO(statsTo) })
     if (statsLoc) p.set('location', statsLoc)
     fetch(`/api/schedule/stats?${p}`).then(r => r.json()).then(d => {
-      setStats(d.stats); setAllLocs(d.locations); setLoadingStats(false)
+      setStats(Array.isArray(d.stats) ? d.stats : [])
+      setAllLocs(Array.isArray(d.locations) ? d.locations : [])
+      setLoadingStats(false)
     })
     loadGrid()
   }
@@ -426,7 +463,14 @@ export default function SchedulePage() {
               </tr>
             </thead>
             <tbody>
-              {loadingGrid ? (
+              {gridError ? (
+                <tr>
+                  <td colSpan={8} className="text-center py-12">
+                    <p className="text-red-500 text-sm">{gridError}</p>
+                    <a href="/api/auth/logout" className="mt-2 inline-block text-xs text-gray-500 underline">Перезайти</a>
+                  </td>
+                </tr>
+              ) : loadingGrid ? (
                 <tr><td colSpan={8} className="text-center py-12 text-gray-400">Загрузка...</td></tr>
               ) : locations.length === 0 ? (
                 <tr><td colSpan={8} className="text-center py-12 text-gray-400">
@@ -518,7 +562,12 @@ export default function SchedulePage() {
             />
           </div>
 
-          {loadingStats ? (
+          {statsError ? (
+            <div className="text-center py-10">
+              <p className="text-red-500 text-sm">{statsError}</p>
+              <a href="/api/auth/logout" className="mt-2 inline-block text-xs text-gray-500 underline">Перезайти</a>
+            </div>
+          ) : loadingStats ? (
             <div className="text-center py-10 text-gray-400 text-sm">Загрузка...</div>
           ) : stats.length === 0 ? (
             <div className="text-center py-10 text-gray-400 text-sm">Нет данных</div>
