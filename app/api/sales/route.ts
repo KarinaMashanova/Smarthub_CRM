@@ -196,7 +196,7 @@ export async function GET(req: NextRequest) {
       retailDelta,
       rcDelta: rcDelta > 0 ? Math.round(rcDelta) : null,
       rcBonus,
-      cashBonus: margin !== null && normalizedPaymentType === 'Наличные' ? Math.round(margin * 0.025) : 0,
+      cashBonus: margin !== null && s.cashMoney > 0 ? Math.round(margin * 0.025) : 0,
     }
   })
   const filteredSales = salesWithFinance.filter(s => {
