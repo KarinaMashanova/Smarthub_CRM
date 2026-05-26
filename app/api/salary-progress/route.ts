@@ -19,29 +19,24 @@ export async function GET(req: NextRequest) {
   const from  = new Date(year, month - 1, 1)
   const to    = new Date(year, month, 0, 23, 59, 59)
 
-  const [tiers, allDates] = await Promise.all([
+  const [tiers] = await Promise.all([
     prisma.salaryTier.findMany({ orderBy: { minMargin: 'asc' } }),
-    prisma.scheduleSlot.findMany({
-      where: { date: { gte: from, lte: to }, employeeName: { not: null } },
-      select: { date: true },
-      distinct: ['date'],
-    }),
   ])
-  const totalWorkingDays = allDates.length
+  const totalWorkingDays = 23
 
   // ── Режим: все сотрудники (только для ADMIN) ─────────────────────────────
   if (session.role === 'ADMIN' && searchParams.get('all') === 'true') {
-    const [slots, orderPositions, salePositions] = await Promise.all([
+    const [slots, orders, salePositions] = await Promise.all([
       prisma.scheduleSlot.findMany({
         where: { date: { gte: from, lte: to }, employeeName: { not: null } },
         select: { employeeName: true },
       }),
-      prisma.orderPosition.findMany({
-        where: { order: { dateClose: { gte: from, lte: to }, isVisible: true, isReturn: false, managerName: { not: null } } },
-        select: { soldPrice: true, count: true, purchasePriceSumm: true, order: { select: { managerName: true } } },
+      prisma.order.findMany({
+        where: { dateClose: { gte: from, lte: to }, isVisible: true, isReturn: false, managerName: { not: null } },
+        select: { managerName: true, revenue: true, positions: { select: { purchasePriceSumm: true } } },
       }),
       prisma.salePosition.findMany({
-        where: { isWork: false, sale: { date: { gte: from, lte: to }, isReturn: false, sellerName: { not: null } } },
+        where: { sale: { date: { gte: from, lte: to }, isReturn: false, sellerName: { not: null } } },
         select: { soldPrice: true, count: true, purchasePriceSumm: true, sale: { select: { sellerName: true } } },
       }),
     ])
@@ -55,9 +50,11 @@ export async function GET(req: NextRequest) {
 
     // Маржа по сотрудникам
     const marginMap = new Map<string, number>()
-    for (const p of orderPositions) {
-      const n = p.order.managerName!
-      marginMap.set(n, (marginMap.get(n) ?? 0) + p.soldPrice * p.count - p.purchasePriceSumm)
+    for (const o of orders) {
+      if (o.positions.length === 0) continue
+      const n = o.managerName!
+      const cost = o.positions.reduce((sum, p) => sum + p.purchasePriceSumm, 0)
+      marginMap.set(n, (marginMap.get(n) ?? 0) + o.revenue - cost)
     }
     for (const p of salePositions) {
       const n = p.sale.sellerName!
@@ -82,14 +79,20 @@ export async function GET(req: NextRequest) {
   const employeeName = session.role === 'ADMIN'
     ? (searchParams.get('employee') || session.name)
     : session.name
+  const employeeOrderFilter = session.role === 'MANAGER'
+    ? { OR: [{ managerId: session.employeeId }, { managerName: employeeName }] }
+    : { managerName: employeeName }
+  const employeeSaleFilter = session.role === 'MANAGER'
+    ? { OR: [{ sellerId: session.employeeId }, { sellerName: employeeName }] }
+    : { sellerName: employeeName }
 
-  const [orderPositions, salePositions, empShifts] = await Promise.all([
-    prisma.orderPosition.findMany({
-      where: { order: { dateClose: { gte: from, lte: to }, isVisible: true, isReturn: false, managerName: employeeName } },
-      select: { soldPrice: true, count: true, purchasePriceSumm: true },
+  const [orders, salePositions, empShifts] = await Promise.all([
+    prisma.order.findMany({
+      where: { dateClose: { gte: from, lte: to }, isVisible: true, isReturn: false, ...employeeOrderFilter },
+      select: { revenue: true, positions: { select: { purchasePriceSumm: true } } },
     }),
     prisma.salePosition.findMany({
-      where: { isWork: false, sale: { date: { gte: from, lte: to }, isReturn: false, sellerName: employeeName } },
+      where: { sale: { date: { gte: from, lte: to }, isReturn: false, ...employeeSaleFilter } },
       select: { soldPrice: true, count: true, purchasePriceSumm: true },
     }),
     prisma.scheduleSlot.count({
@@ -98,7 +101,11 @@ export async function GET(req: NextRequest) {
   ])
 
   const margin = Math.round(
-    orderPositions.reduce((s, p) => s + p.soldPrice * p.count - p.purchasePriceSumm, 0) +
+    orders.reduce((s, o) => {
+      if (o.positions.length === 0) return s
+      const cost = o.positions.reduce((sum, p) => sum + p.purchasePriceSumm, 0)
+      return s + o.revenue - cost
+    }, 0) +
     salePositions.reduce((s, p)  => s + p.soldPrice * p.count - p.purchasePriceSumm, 0)
   )
   const { current: currentTier, next: nextTier } = calcTier(margin, tiers)
