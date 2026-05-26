@@ -333,6 +333,12 @@ export default function SalaryPage() {
                 + Добавить
               </button>
             )}
+            {isAdmin && view === 'salary' && (
+              <button onClick={() => { setForm({ ...makeEmpty(), actionType: 'Доначисление Оклада', subType: 'Оклад' }); setShowModal(true) }}
+                className="h-7 px-3 text-xs rounded-lg bg-[#FFD600] text-black hover:bg-[#FFCA00] font-medium whitespace-nowrap">
+                + Доначисление
+              </button>
+            )}
             {view === 'repairs' && (
               <button onClick={() => { setRepairForm(makeEmptyRepair()); setOrderSearch(''); setShowRepairModal(true) }}
                 className="h-7 px-3 text-xs rounded-lg bg-[#FFD600] text-black hover:bg-[#FFCA00] font-medium whitespace-nowrap">
