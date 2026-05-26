@@ -63,7 +63,7 @@ export async function GET(req: NextRequest) {
     }),
   ])
 
-  const totalWorkingDays = 23
+  const totalWorkingDays: number = 23
 
   const shiftsMap = new Map<string, number>()
   for (const s of scheduleSlots) {
