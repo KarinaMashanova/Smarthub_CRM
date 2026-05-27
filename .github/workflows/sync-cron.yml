@@ -2,11 +2,11 @@ name: Smarthub Sync Cron
 
 # GitHub Scheduled Actions могут опаздывать под нагрузкой, особенно на 0-й минуте часа.
 # Поэтому lookback в sync/orders.ts и sync/sales.ts выставлен в 4 часа
-# — каждый запуск перекрывает пропущенный промежуток. Минуты смещены от :00.
+# — каждый hourly запуск перекрывает пропущенный промежуток. Минута смещена от :00.
 # workflow_dispatch позволяет запустить вручную если нужно.
 on:
   schedule:
-    - cron: '7,22,37,52 * * * *'
+    - cron: '7 * * * *'
   workflow_dispatch:
 
 jobs:
