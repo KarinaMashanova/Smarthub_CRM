@@ -522,9 +522,9 @@ export default function SchedulePage() {
                 </td></tr>
               ) : locations.map(loc => {
                 const sis = Array.from(locSlots[loc]).sort((a,b) => a-b)
-                // Дом Мод always has two editable rows per shop, even before employees are assigned.
+                // Multi-slot locations always have two editable rows, even before employees are assigned.
                 const visSis = isAdmin
-                  ? sis.filter(si => loc.startsWith('Дом Мод') || si === 0 || weekDays.some(d => {
+                  ? sis.filter(si => isMultiSlot(loc) || si === 0 || weekDays.some(d => {
                       const s = grid[loc]?.[si]?.[toISO(d)]
                       return s?.employeeName || s?.leaveType
                     }))

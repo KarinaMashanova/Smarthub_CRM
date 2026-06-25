@@ -70,6 +70,9 @@ export default function SyncPage() {
   const [vmrRunning, setVmrRunning] = useState(false)
   const [vmrMsg,     setVmrMsg]     = useState('')
 
+  const [nastroykaRunning, setNastroykaRunning] = useState(false)
+  const [nastroykaMsg,     setNastroykaMsg]     = useState('')
+
   const load = useCallback(() => {
     setLoading(true)
     fetch('/api/admin/sync-logs')
@@ -146,6 +149,17 @@ export default function SyncPage() {
       setVmrMsg(`Пересчитано заказов: ${data.count ?? 0}`)
     } catch (e: any) { setVmrMsg(e.message ?? 'Ошибка') }
     finally { setVmrRunning(false) }
+  }
+
+  async function startNastroykaRecalc() {
+    setNastroykaRunning(true); setNastroykaMsg('')
+    try {
+      const res  = await fetch('/api/admin/nastroyka-recalc', { method: 'POST', headers: {'Content-Type':'application/json'}, body: '{}' })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`)
+      setNastroykaMsg(`Создано: ${data.created ?? 0}, удалено: ${data.deleted ?? 0}`)
+    } catch (e: any) { setNastroykaMsg(e.message ?? 'Ошибка') }
+    finally { setNastroykaRunning(false) }
   }
 
   return (
@@ -270,6 +284,21 @@ export default function SyncPage() {
               <button onClick={startVmrRecalc} disabled={vmrRunning}
                 className="text-xs px-3 py-1.5 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-700 disabled:opacity-50 transition-colors whitespace-nowrap">
                 {vmrRunning ? 'Пересчёт...' : 'Пересчитать'}
+              </button>
+            </div>
+          </div>
+
+          {/* Пересчёт Настройка */}
+          <div className="flex items-center gap-3 px-4 py-3">
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-medium text-gray-800">Пересчёт бонусов Настройка</p>
+              <p className="text-[11px] text-gray-400 mt-0.5">Комплексная настройка ≥5000 → 50%, Стандартная / Настройка бонус → 30%</p>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              {nastroykaMsg && <span className="text-[11px] text-gray-500">{nastroykaMsg}</span>}
+              <button onClick={startNastroykaRecalc} disabled={nastroykaRunning}
+                className="text-xs px-3 py-1.5 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-700 disabled:opacity-50 transition-colors whitespace-nowrap">
+                {nastroykaRunning ? 'Пересчёт...' : 'Пересчитать'}
               </button>
             </div>
           </div>

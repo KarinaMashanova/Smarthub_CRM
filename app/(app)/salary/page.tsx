@@ -67,6 +67,7 @@ const BONUS_CHIPS = [
   { label: 'ВМР',       value: 'За ВМР' },
   { label: 'Гангстер',  value: 'За Гангстера' },
   { label: 'Наличность',value: 'За наличность' },
+  { label: 'Настройка', value: 'За настройку' },
 ]
 
 function toISO(d: Date) {
