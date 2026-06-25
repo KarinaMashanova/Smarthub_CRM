@@ -138,11 +138,11 @@ async function upsertOrderBonus(row: ReturnType<typeof buildOrderRow>, positions
     }
   }
 
-  if (margin >= 4000) {
+  if (margin >= 5000) {
     await upsertBonus(
       'За ВМР',
       ['Зарплата за Заказ'],
-      Math.round(margin * 0.20),
+      Math.round(margin * 0.25),
       true,
       `ВМР ${orderRef} | Маржа ${Math.round(margin).toLocaleString('ru-RU')} ₽`,
     )
@@ -181,6 +181,37 @@ async function syncOrderList(orders: any[]) {
     await syncOrderDetail(detail.data)
     count++
     await sleep(200)
+  }
+  return count
+}
+
+// Пересчитывает ВМР-бонусы для всех заказов прямо из БД (без LiveSklad)
+export async function recalcVmrBonuses(): Promise<number> {
+  const orders = await prisma.order.findMany({
+    select: {
+      id: true, number: true, shopId: true, managerName: true,
+      revenue: true, paymentType: true,
+      dateClose: true, dateFinish: true,
+      isReturn: true, isVisible: true,
+      positions: { select: { purchasePriceSumm: true } },
+    },
+  })
+  let count = 0
+  for (const o of orders) {
+    const row = {
+      id: o.id,
+      number: o.number,
+      shopId: o.shopId,
+      managerName: o.managerName,
+      revenue: o.revenue,
+      paymentType: o.paymentType,
+      dateClose: o.dateClose,
+      dateFinish: o.dateFinish,
+      isReturn: o.isReturn,
+      isVisible: o.isVisible,
+    } as ReturnType<typeof buildOrderRow>
+    await upsertOrderBonus(row, o.positions)
+    count++
   }
   return count
 }

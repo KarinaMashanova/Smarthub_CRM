@@ -44,7 +44,7 @@ export async function GET(req: NextRequest) {
 
   const [orders, sales] = await Promise.all([
     prisma.order.findMany({
-      where: { dateClose: { gte: from, lte: to }, isVisible: true, isReturn: false },
+      where: { dateClose: { gte: from, lte: to }, isVisible: true, isReturn: false, managerName: { not: null } },
       select: {
         id: true, revenue: true, dateClose: true,
         managerName: true, shopId: true, shop: { select: { name: true } },
@@ -53,7 +53,7 @@ export async function GET(req: NextRequest) {
       },
     }),
     prisma.sale.findMany({
-      where: { date: { gte: from, lte: to }, isReturn: false },
+      where: { date: { gte: from, lte: to }, isReturn: false, sellerName: { not: null } },
       select: {
         shopId: true,
         shop: { select: { name: true } },
@@ -105,9 +105,9 @@ export async function GET(req: NextRequest) {
     const costTotal    = o.positions.reduce((s, p) => s + p.purchasePriceSumm, 0)
     const hasPos       = o.positions.length > 0
     const margin       = hasPos ? o.revenue - costTotal : null
-    const isHighMargin = margin !== null && margin >= 4000
+    const isHighMargin = margin !== null && margin >= 5000
     const salary       = margin === null ? null
-      : isHighMargin ? margin * 0.20 : 0
+      : isHighMargin ? margin * 0.25 : 0
     return { ...o, margin, isHighMargin, salary }
   })
 
@@ -183,7 +183,6 @@ export async function GET(req: NextRequest) {
   }
   const byManager = Object.values(managerMap)
     .sort((a, b) => b.totalRevenue - a.totalRevenue)
-    .slice(0, 15)
 
   // По магазинам (заказы)
   const shopMap: Record<string, { name: string; count: number; revenue: number; margin: number }> = {}

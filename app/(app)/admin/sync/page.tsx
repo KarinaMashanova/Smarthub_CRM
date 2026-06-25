@@ -67,6 +67,9 @@ export default function SyncPage() {
   const [directoryRunning, setDirectoryRunning] = useState(false)
   const [directoryMsg,     setDirectoryMsg]     = useState('')
 
+  const [vmrRunning, setVmrRunning] = useState(false)
+  const [vmrMsg,     setVmrMsg]     = useState('')
+
   const load = useCallback(() => {
     setLoading(true)
     fetch('/api/admin/sync-logs')
@@ -132,6 +135,17 @@ export default function SyncPage() {
       load()
     } catch (e: any) { setDirectoryMsg(e.message ?? 'Ошибка') }
     finally { setDirectoryRunning(false) }
+  }
+
+  async function startVmrRecalc() {
+    setVmrRunning(true); setVmrMsg('')
+    try {
+      const res  = await fetch('/api/admin/vmr-recalc', { method: 'POST' })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`)
+      setVmrMsg(`Пересчитано заказов: ${data.count ?? 0}`)
+    } catch (e: any) { setVmrMsg(e.message ?? 'Ошибка') }
+    finally { setVmrRunning(false) }
   }
 
   return (
@@ -207,6 +221,21 @@ export default function SyncPage() {
               className="text-xs px-3 py-1.5 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-700 transition-colors whitespace-nowrap shrink-0">
               Настроить →
             </Link>
+          </div>
+
+          {/* Пересчёт ВМР */}
+          <div className="flex items-center gap-3 px-4 py-3">
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-medium text-gray-800">Пересчёт бонусов ВМР</p>
+              <p className="text-[11px] text-gray-400 mt-0.5">Пересчитать «За ВМР» по новым правилам (от 5 000 ₽, 25%) для всех заказов в БД</p>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              {vmrMsg && <span className="text-[11px] text-gray-500">{vmrMsg}</span>}
+              <button onClick={startVmrRecalc} disabled={vmrRunning}
+                className="text-xs px-3 py-1.5 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-700 disabled:opacity-50 transition-colors whitespace-nowrap">
+                {vmrRunning ? 'Пересчёт...' : 'Пересчитать'}
+              </button>
+            </div>
           </div>
 
           {/* Восстановление */}

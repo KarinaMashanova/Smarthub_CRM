@@ -26,6 +26,7 @@ export async function POST(
       shopId: true,
       num: true,
       number: true,
+      managerId: true,
       managerName: true,
       masterName: true,
       revenue: true,
@@ -35,14 +36,14 @@ export async function POST(
     },
   })
   if (!order) return NextResponse.json({ error: 'Not found' }, { status: 404 })
-  if (session.role === 'MANAGER' && order.managerName !== session.name) {
+  if (session.role === 'MANAGER' && order.managerId !== session.employeeId && order.managerName !== session.name) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 
   const margin = order.positions.length > 0 && !order.isReturn && order.isVisible
     ? order.revenue - order.positions.reduce((sum, p) => sum + p.purchasePriceSumm, 0)
     : null
-  const canTakeSameDayWorkFee = Boolean(order.managerName && order.masterName && order.managerName === order.masterName && margin !== null && margin >= 4000)
+  const canTakeSameDayWorkFee = Boolean(order.managerName && order.masterName && order.managerName === order.masterName && margin !== null && margin >= 5000)
   if (!canTakeSameDayWorkFee) {
     return NextResponse.json({ error: 'same_day_work_fee_not_allowed' }, { status: 403 })
   }

@@ -51,11 +51,11 @@ export async function GET(req: NextRequest) {
   const and: any[] = []
 
   if (session.role === 'MANAGER') {
-    where.managerName = session.name
+    and.push({ OR: [{ managerId: session.employeeId }, { managerName: session.name }] })
   }
   if (session.role === 'ADMIN' && shopId) where.shopId = shopId
   if (status) where.statusName = status
-  if (manager) where.managerName = manager
+  if (session.role === 'ADMIN' && manager) where.managerName = manager
   if (master) where.masterName = master
   if (returnMode === 'only') where.isReturn = true
   if (returnMode === 'exclude') where.isReturn = false
@@ -74,7 +74,7 @@ export async function GET(req: NextRequest) {
   if (and.length > 0) where.AND = and
 
   const baseWhere: any = session.role === 'MANAGER'
-    ? { managerName: session.name }
+    ? { OR: [{ managerId: session.employeeId }, { managerName: session.name }] }
     : {}
 
   const [orders, statuses, shops, managers, masters, paymentTypes] = await Promise.all([
@@ -129,7 +129,7 @@ export async function GET(req: NextRequest) {
     const hasPositions = o.positions.length > 0
     const costTotal = o.positions.reduce((s, p) => s + p.purchasePriceSumm, 0)
     const margin    = hasPositions && !isExcludedFromFinance ? o.revenue - costTotal : null
-    const isHighMargin = margin !== null && margin >= 4000
+    const isHighMargin = margin !== null && margin >= 5000
     const { positions: _, ...rest } = o
     return {
       ...rest,
@@ -138,7 +138,7 @@ export async function GET(req: NextRequest) {
       costTotal: hasPositions && !isExcludedFromFinance ? costTotal : null,
       margin,
       isHighMargin,
-      vmrBonus: isHighMargin && margin !== null ? Math.round(margin * 0.20) : 0,
+      vmrBonus: isHighMargin && margin !== null ? Math.round(margin * 0.25) : 0,
       cashBonus: margin !== null && normalizePaymentType(o.paymentType) === 'Наличные' ? Math.round(margin * 0.025) : 0,
     }
   })
