@@ -52,11 +52,11 @@ export default function RealCostsPage() {
     } finally { setSaving(false) }
   }
 
-  const filtered = items.filter(i =>
-    !search || i.name.toLowerCase().includes(search.toLowerCase())
-  )
-  const visibleCount  = filtered.length
-  const filledCount   = items.filter(i => i.name.trim() && i.realCost !== '').length
+  const filledCount  = items.filter(i => i.name.trim() && i.realCost !== '').length
+  // Сохраняем оригинальный индекс при фильтрации, чтобы update/removeItem работали корректно
+  const visibleItems = items
+    .map((item, idx) => ({ item, idx }))
+    .filter(({ item }) => !search || item.name.toLowerCase().includes(search.toLowerCase()))
 
   return (
     <div className="max-w-2xl mx-auto px-4 py-8">
@@ -76,7 +76,9 @@ export default function RealCostsPage() {
           placeholder="Поиск по названию..."
           className="flex-1 text-xs px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#FFD600]"
         />
-        <span className="text-xs text-gray-400 shrink-0">{filledCount} позиций</span>
+        <span className="text-xs text-gray-400 shrink-0">
+          {search ? `${visibleItems.length} из ${filledCount}` : `${filledCount} позиций`}
+        </span>
       </div>
 
       {/* Таблица */}
@@ -87,29 +89,26 @@ export default function RealCostsPage() {
           <div />
         </div>
 
-        {(search ? filtered : items).map((item, idx) => {
-          const realIdx = search ? items.findIndex(i => i.name === item.name && i.realCost === item.realCost) : idx
-          return (
-            <div key={realIdx} className="grid grid-cols-[1fr_140px_32px] divide-x divide-gray-100 border-t border-gray-100">
-              <input
-                value={item.name}
-                onChange={e => update(realIdx, 'name', e.target.value)}
-                placeholder="iPhone 13 экран"
-                className="px-3 py-2 text-xs text-gray-700 focus:outline-none focus:bg-yellow-50/50"
-              />
-              <input
-                type="number" min={0} step={100}
-                value={item.realCost}
-                onChange={e => update(realIdx, 'realCost', e.target.value)}
-                placeholder="0"
-                className="px-3 py-2 text-xs text-gray-700 text-right focus:outline-none focus:bg-yellow-50/50"
-              />
-              <button onClick={() => removeItem(realIdx)} className="flex items-center justify-center text-gray-300 hover:text-red-400 text-sm">
-                ×
-              </button>
-            </div>
-          )
-        })}
+        {visibleItems.map(({ item, idx }) => (
+          <div key={idx} className="grid grid-cols-[1fr_140px_32px] divide-x divide-gray-100 border-t border-gray-100">
+            <input
+              value={item.name}
+              onChange={e => update(idx, 'name', e.target.value)}
+              placeholder="iPhone 13 экран"
+              className="px-3 py-2 text-xs text-gray-700 focus:outline-none focus:bg-yellow-50/50"
+            />
+            <input
+              type="number" min={0} step={100}
+              value={item.realCost}
+              onChange={e => update(idx, 'realCost', e.target.value)}
+              placeholder="0"
+              className="px-3 py-2 text-xs text-gray-700 text-right focus:outline-none focus:bg-yellow-50/50"
+            />
+            <button onClick={() => removeItem(idx)} className="flex items-center justify-center text-gray-300 hover:text-red-400 text-sm">
+              ×
+            </button>
+          </div>
+        ))}
       </div>
 
       {!search && (
