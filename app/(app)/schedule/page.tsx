@@ -69,6 +69,14 @@ function addDays(d: Date, n: number) { const r = new Date(d); r.setDate(r.getDat
 function toISO(d: Date) {
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
 }
+function scheduleDateKey(value: string) {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Europe/Moscow',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date(value))
+}
 
 export default function SchedulePage() {
   const [session, setSession]     = useState<Session|null>(null)
@@ -81,7 +89,10 @@ export default function SchedulePage() {
   const [editValue, setEditValue] = useState('')
   const [empList, setEmpList]     = useState<string[]>([])
   const [showHelp, setShowHelp]   = useState(false)
+  const [creatingSlot, setCreatingSlot] = useState<{ loc: string; si: number; date: string } | null>(null)
+  const [createValue, setCreateValue] = useState('')
   const editRef = useRef<HTMLInputElement>(null)
+  const createRef = useRef<HTMLInputElement>(null)
 
   // Leave form
   const [showLeaveForm, setShowLeaveForm] = useState(false)
@@ -190,15 +201,26 @@ export default function SchedulePage() {
 
   const isAdmin = session?.role === 'ADMIN'
 
+  // Локации с несколькими строками (всегда показываем 2 слота)
+  const MULTI_SLOT_PREFIXES = ['Дом Мод', 'Мега Молл']
+  const isMultiSlot = (loc: string) => MULTI_SLOT_PREFIXES.some(p => loc.startsWith(p))
+
   const visible = isAdmin ? slots : slots.filter(s => s.employeeName === session?.name)
   const grid: Record<string, Record<number, Record<string, Slot>>> = {}
   const locSlots: Record<string, Set<number>> = {}
   for (const s of visible) {
     if (!grid[s.location]) grid[s.location] = {}
     if (!grid[s.location][s.slotIndex]) grid[s.location][s.slotIndex] = {}
-    grid[s.location][s.slotIndex][s.date.slice(0,10)] = s
+    grid[s.location][s.slotIndex][scheduleDateKey(s.date)] = s
     if (!locSlots[s.location]) locSlots[s.location] = new Set()
     locSlots[s.location].add(s.slotIndex)
+  }
+  // Для многострочных локаций всегда обеспечиваем оба слота в locSlots
+  for (const loc of Object.keys(locSlots)) {
+    if (isAdmin && isMultiSlot(loc)) {
+      locSlots[loc].add(0)
+      locSlots[loc].add(1)
+    }
   }
 
   const locations = Object.keys(locSlots).sort().filter(loc =>
@@ -271,8 +293,30 @@ export default function SchedulePage() {
 
   function startEdit(slot: Slot) {
     if (!isAdmin) return
+    setCreatingSlot(null)
     setEditing(slot.id); setEditValue(slot.employeeName ?? '')
     setTimeout(() => editRef.current?.focus(), 20)
+  }
+
+  function startCreate(loc: string, si: number, date: string) {
+    if (!isAdmin) return
+    setEditing(null)
+    setCreatingSlot({ loc, si, date }); setCreateValue('')
+    setTimeout(() => createRef.current?.focus(), 20)
+  }
+
+  async function saveCreate(loc: string, si: number, date: string, value: string) {
+    setCreatingSlot(null)
+    const employeeName = value.trim() || null
+    if (!employeeName) return
+    const res = await fetch('/api/schedule', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ location: loc, slotIndex: si, date, employeeName }),
+    })
+    if (res.ok) {
+      const newSlot = await res.json()
+      setSlots(prev => [...prev, newSlot])
+    }
   }
 
   const filteredEmps = editValue
@@ -478,9 +522,9 @@ export default function SchedulePage() {
                 </td></tr>
               ) : locations.map(loc => {
                 const sis = Array.from(locSlots[loc]).sort((a,b) => a-b)
-                // Hide secondary slots (si > 0) if completely empty this week
+                // Дом Мод always has two editable rows per shop, even before employees are assigned.
                 const visSis = isAdmin
-                  ? sis.filter(si => si === 0 || weekDays.some(d => {
+                  ? sis.filter(si => loc.startsWith('Дом Мод') || si === 0 || weekDays.some(d => {
                       const s = grid[loc]?.[si]?.[toISO(d)]
                       return s?.employeeName || s?.leaveType
                     }))
@@ -501,12 +545,21 @@ export default function SchedulePage() {
                       const isToday = key === todayISO
                       const isMe = slot?.employeeName === session?.name
                       const isEditing = slot && editing === slot.id
+                      const isCreating = !slot && creatingSlot?.loc === loc && creatingSlot?.si === si && creatingSlot?.date === key
+                      const filteredCreate = createValue
+                        ? empList.filter(e => e.toLowerCase().includes(createValue.toLowerCase())).slice(0,8)
+                        : empList.slice(0,8)
 
                       return (
-                        <td key={key} onClick={() => slot && !isEditing && startEdit(slot)}
+                        <td key={key}
+                          onClick={() => {
+                            if (!isAdmin) return
+                            if (slot && !isEditing) startEdit(slot)
+                            else if (!slot && !isCreating) startCreate(loc, si, key)
+                          }}
                           className={`py-0.5 px-1 text-center border-l border-gray-100 relative
                             ${isToday?'bg-amber-50/30':''}
-                            ${isAdmin&&slot?'cursor-pointer hover:bg-yellow-50':''}`}>
+                            ${isAdmin?'cursor-pointer hover:bg-yellow-50':''}`}>
                           {isEditing && slot ? (
                             <div className="relative z-30">
                               <input ref={editRef} value={editValue}
@@ -523,6 +576,22 @@ export default function SchedulePage() {
                                 </button>
                                 {filteredEmps.map(emp => (
                                   <button key={emp} type="button" onMouseDown={() => saveEdit(slot.id, emp)}
+                                    className="w-full px-3 py-1.5 text-left text-[11px] hover:bg-gray-50 text-gray-800">{emp}</button>
+                                ))}
+                              </div>
+                            </div>
+                          ) : isCreating ? (
+                            <div className="relative z-30">
+                              <input ref={createRef} value={createValue}
+                                onChange={e => setCreateValue(e.target.value)}
+                                onBlur={() => saveCreate(loc, si, key, createValue)}
+                                onKeyDown={e => { if(e.key==='Enter') saveCreate(loc,si,key,createValue); if(e.key==='Escape') setCreatingSlot(null) }}
+                                className="w-full text-xs px-1.5 py-0.5 rounded border border-[#FFD600] outline-none bg-white shadow-sm"
+                                autoComplete="off"
+                              />
+                              <div className="absolute top-full left-0 mt-0.5 w-44 bg-white border border-gray-200 rounded-lg shadow-lg z-40 max-h-44 overflow-y-auto">
+                                {filteredCreate.map(emp => (
+                                  <button key={emp} type="button" onMouseDown={() => saveCreate(loc, si, key, emp)}
                                     className="w-full px-3 py-1.5 text-left text-[11px] hover:bg-gray-50 text-gray-800">{emp}</button>
                                 ))}
                               </div>

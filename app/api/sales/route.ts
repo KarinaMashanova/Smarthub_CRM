@@ -43,25 +43,34 @@ export async function GET(req: NextRequest) {
   const to = searchParams.get('to')
     ? new Date(searchParams.get('to')!)
     : new Date(now.setHours(23, 59, 59, 999))
+  to.setHours(23, 59, 59, 999)
 
   const where: any = { date: { gte: from, lte: to }, isReturn: false }
 
   if (session.role === 'MANAGER') {
-    where.sellerName = session.name
+    where.AND = [{
+      OR: [
+        { sellerId: session.employeeId },
+        { sellerName: session.name },
+      ],
+    }]
   } else if (shop) {
     where.shopId = shop
   }
 
-  if (seller) { delete where.OR; where.sellerName = seller }
+  if (seller && session.role === 'ADMIN') where.sellerName = seller
   if (search) {
-    where.OR = [
+    where.AND = [
+      ...(where.AND ?? []),
+      { OR: [
       { number:     { contains: search, mode: 'insensitive' } },
       { sellerName: { contains: search, mode: 'insensitive' } },
+      ] },
     ]
   }
 
   const baseWhere: any = session.role === 'MANAGER'
-    ? { sellerName: session.name }
+    ? { OR: [{ sellerId: session.employeeId }, { sellerName: session.name }] }
     : {}
 
   // Загружаем каталог: RC-бонус (аксессуары) + кредитные группы (смартфоны)
@@ -85,6 +94,7 @@ export async function GET(req: NextRequest) {
         id: true, number: true,
         shopId: true, shop: { select: { name: true } },
         date: true,
+        sellerId: true,
         sellerName: true,
         cashMoney: true, cashBank: true,
         revenue: true, refund: true, paymentType: true,
@@ -124,8 +134,8 @@ export async function GET(req: NextRequest) {
       return { p, posRevenue, posGroup, creditEntry, isLikelyPhone, isMarginExcluded }
     })
 
-    // Кредит = в чеке есть смартфон (с ценой или без)
-    const saleHasCredit = pass1.some(x => !x.p.isWork && x.isLikelyPhone)
+    // Кредит-чипы отключены: позиции не помечаются как кредит
+    const saleHasCredit = false
 
     // Проход 2: финальное обогащение с учётом контекста продажи
     const enrichedPositions = pass1.map(({ p, posRevenue, posGroup, creditEntry, isLikelyPhone, isMarginExcluded }) => {
@@ -139,20 +149,7 @@ export async function GET(req: NextRequest) {
         && posDelta !== null && posDelta >= RC_THRESHOLD
         ? Math.round(posDelta * 0.5) : 0
 
-      let posMargin: number | null = null
-      if (isCredit) {
-        if (isLikelyPhone && posRevenue > 0) {
-          // Смартфон в кредитном чеке: маржа = soldPrice − каталог РЦ (или − себест. если не в каталоге)
-          posMargin = creditEntry !== null
-            ? Math.abs(Math.round((p.soldPrice - creditEntry.retailPrice) * p.count))
-            : Math.round(p.soldPrice * p.count - p.purchasePriceSumm)
-        } else if (isMarginExcluded) {
-          // Бесплатный подарочный товар: маржа = |себест.| (берём по модулю)
-          posMargin = Math.abs(Math.round(p.soldPrice * p.count - p.purchasePriceSumm))
-        }
-      } else if (!isMarginExcluded && p.purchasePriceSumm > 0) {
-        posMargin = Math.round(p.soldPrice * p.count - p.purchasePriceSumm)
-      }
+      const posMargin = Math.round(p.soldPrice * p.count - p.purchasePriceSumm)
 
       const catalogRcForDisplay = creditEntry?.retailPrice ?? rc ?? null
       return {
@@ -171,10 +168,8 @@ export async function GET(req: NextRequest) {
     const costTotal    = enrichedPositions.reduce((sum, p) => sum + p.purchasePriceSumm, 0)
     const retailTotal  = enrichedPositions.reduce((sum, p) => sum + p.price * p.count, 0)
     const soldTotal    = enrichedPositions.reduce((sum, p) => sum + p.soldPrice * p.count, 0)
-    // Маржа продажи = сумма непустых posMargin (учитывает и обычные, и кредитные позиции)
-    const marginFromPositions = enrichedPositions.reduce((sum, p) => sum + (p.margin ?? 0), 0)
-    const hasAnyMargin = enrichedPositions.some(p => p.margin !== null)
-    const margin = hasPositions && !s.isReturn && hasAnyMargin ? marginFromPositions : null
+    const marginFromPositions = enrichedPositions.reduce((sum, p) => sum + p.margin, 0)
+    const margin = hasPositions && !s.isReturn ? marginFromPositions : null
     const retailDelta = hasPositions ? retailTotal - soldTotal : null
     const normalizedPaymentType = normalizePaymentType(s.paymentType)
 
