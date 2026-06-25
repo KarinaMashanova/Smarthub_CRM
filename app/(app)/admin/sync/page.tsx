@@ -199,6 +199,42 @@ export default function SyncPage() {
             </Link>
           </div>
 
+          {/* Реальные цены */}
+          <div className="flex items-center gap-3 px-4 py-3">
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-medium text-gray-800">Реальные цены закупа</p>
+              <p className="text-[11px] text-gray-400 mt-0.5">Справочник реальных себестоимостей — только для администратора</p>
+            </div>
+            <Link href="/admin/real-costs"
+              className="text-xs px-3 py-1.5 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-700 transition-colors whitespace-nowrap shrink-0">
+              Открыть →
+            </Link>
+          </div>
+
+          {/* Налоги */}
+          <div className="flex items-center gap-3 px-4 py-3">
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-medium text-gray-800">Налоговые системы точек</p>
+              <p className="text-[11px] text-gray-400 mt-0.5">Разметить точки: АУСН / Патент и ставки</p>
+            </div>
+            <Link href="/admin/tax-config"
+              className="text-xs px-3 py-1.5 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-700 transition-colors whitespace-nowrap shrink-0">
+              Настроить →
+            </Link>
+          </div>
+
+          {/* Чистая прибыль */}
+          <div className="flex items-center gap-3 px-4 py-3">
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-medium text-gray-800">Отчёт: Чистая прибыль</p>
+              <p className="text-[11px] text-gray-400 mt-0.5">Реальная маржа с учётом настоящих цен закупа и налогов</p>
+            </div>
+            <Link href="/admin/profit"
+              className="text-xs px-3 py-1.5 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-700 transition-colors whitespace-nowrap shrink-0">
+              Открыть →
+            </Link>
+          </div>
+
           {/* Бонус Гангстер */}
           <div className="flex items-center gap-3 px-4 py-3">
             <div className="flex-1 min-w-0">

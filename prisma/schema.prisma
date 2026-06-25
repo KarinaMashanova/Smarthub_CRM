@@ -30,12 +30,22 @@ model Shop {
   gangsterThreshold  Float?        // порог для одиночных салонов (без группы)
   groupId            Int?
   group              ShopGroup?    @relation(fields: [groupId], references: [id])
+  taxSystem          String        @default("NONE")  // "AUSN" | "PATENT" | "NONE"
+  taxRate            Float?                           // доля, напр. 0.08 для АУСН
   syncedAt           DateTime      @default(now())
   orders        Order[]
   sales         Sale[]
   employees     Employee[]
   cashEntries   CashEntry[]
   cashBalance   CashBalance?
+}
+
+model RealCostItem {
+  id        Int      @id @default(autoincrement())
+  name      String   @unique
+  realCost  Float
+  updatedAt DateTime @updatedAt
+  updatedBy String   @default("")
 }
 
 model Status {
