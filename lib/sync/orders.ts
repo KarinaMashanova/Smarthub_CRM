@@ -92,9 +92,13 @@ function buildPositions(data: any) {
   }))
 }
 
+// Только эти subType управляются функцией upsertOrderBonus — остальные (напр. «За настройку»)
+// создаются другими модулями и не должны удаляться здесь.
+const ORDER_BONUS_MANAGED = ['За ВМР', 'За наличность', 'Зарплата за Заказ']
+
 async function upsertOrderBonus(row: ReturnType<typeof buildOrderRow>, positions: ReturnType<typeof buildPositions>) {
   const existing = await prisma.targetAction.findMany({
-    where: { orderId: String(row.id), source: 'AUTO', actionType: 'Бонус' },
+    where: { orderId: String(row.id), source: 'AUTO', actionType: 'Бонус', subType: { in: ORDER_BONUS_MANAGED } },
     select: { id: true, subType: true },
   })
   const findExisting = (subTypes: string[]) => existing.find(a => subTypes.includes(a.subType ?? ''))
