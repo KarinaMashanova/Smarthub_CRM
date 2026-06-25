@@ -76,8 +76,8 @@ export async function GET(req: NextRequest) {
 
   function isCashOnly(paymentType: string | null): boolean {
     if (!paymentType) return false
-    // "Наличные" — только наличные; всё остальное (Безнал, Счёт, смесь) — облагается
-    return paymentType === 'Наличные'
+    // Наличные и Кредит не облагаются налогом; Безнал/Счёт/ККМ — облагаются
+    return paymentType === 'Наличные' || paymentType === 'Кредит'
   }
 
   // Обрабатываем позиции заказов

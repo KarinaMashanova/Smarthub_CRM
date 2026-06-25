@@ -83,24 +83,9 @@ export async function POST(req: NextRequest) {
     },
   })
 
-  if (body.actionType === 'Штраф' || body.actionType === 'Выплата Зарплаты') {
-    const employee = await prisma.employee.findFirst({ where: { name: body.employeeName }, select: { shopId: true } })
-    if (employee?.shopId) {
-      await prisma.cashEntry.create({
-        data: {
-          date:        new Date(body.date),
-          shopId:      employee.shopId,
-          type:        body.actionType,
-          payMethod:   'CASH',
-          isIncome:    body.actionType === 'Штраф',
-          amount:      Number(body.amount),
-          comment:     body.comment || null,
-          authorName:  session.name,
-          linkedName:  body.employeeName,
-        },
-      })
-    }
-  }
+  // CashEntry не создаём: штрафы и выплаты отображаются в Кассе
+  // как виртуальные записи через TargetAction (salaryEntries в /api/cash).
+  // Создание отдельной CashEntry приводило к задвоению в кассе.
 
   return NextResponse.json(action)
 }

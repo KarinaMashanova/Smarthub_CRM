@@ -28,9 +28,13 @@ interface RepairWork {
 interface StatDetail { actionType: string; subType: string | null; count: number; amount: number }
 interface StatRow {
   name: string
-  bonus: number; addon: number
-  ndfl: number; fine: number; totalRepair: number; repairEarned: number; repairTaken: number
-  paidSalary: number; estimatedSalary: number; accrued: number; остаток: number
+  margin: number
+  bonus: number; addon: number; salaryCorrection: number
+  ndfl: number; fine: number
+  totalRepair: number; repairEarned: number; repairTaken: number
+  totalRepairHM: number; repairEarnedHM: number; repairTakenHM: number
+  paidSalary: number; estimatedSalary: number; finalSalary: number; accrued: number; остаток: number
+  accrualDates: string[]; paymentDates: string[]
   details: StatDetail[]
 }
 interface Session { name: string; role: 'MANAGER' | 'ADMIN'; shopId?: string | null }
@@ -96,6 +100,8 @@ export default function SalaryPage() {
   const [subTypes, setSubTypes]   = useState<string[]>([])
   const [admins, setAdmins]       = useState<AdminEmployee[]>([])
   const [view, setView]           = useState<'list' | 'stats' | 'repairs' | 'salary'>('list')
+  const [editSalary, setEditSalary] = useState<{ name: string; value: string } | null>(null)
+  const [savingSalary, setSavingSalary] = useState(false)
 
   const [periodMode,     setPeriodMode]    = useState<'month' | 'today' | 'yesterday' | 'custom'>('month')
   const [selYear,        setSelYear]       = useState(now.getFullYear())
@@ -290,6 +296,27 @@ export default function SalaryPage() {
     if (!confirm('Удалить запись о ремонте?')) return
     await fetch(`/api/repair-works/${id}`, { method: 'DELETE' })
     loadRepairs()
+  }
+
+  async function saveSalaryCorrection(row: StatRow) {
+    if (!editSalary) return
+    const corrected = parseFloat(editSalary.value)
+    if (isNaN(corrected) || corrected < 0) { setEditSalary(null); return }
+    setSavingSalary(true)
+    await fetch('/api/admin/salary-correction', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        employeeName: row.name,
+        from: listFrom,
+        to: listTo,
+        estimatedSalary: row.estimatedSalary,
+        correctedSalary: corrected,
+      }),
+    })
+    setSavingSalary(false)
+    setEditSalary(null)
+    loadStats()
   }
 
   const filteredActions = actions
@@ -696,16 +723,17 @@ export default function SalaryPage() {
           stats.length === 0 ? (
             <div className="text-center py-20 text-gray-400 text-sm">Нет данных за выбранный период</div>
           ) : (
-            <table className="w-full min-w-[1020px] text-xs border-collapse">
+            <table className="w-full min-w-[1160px] text-xs border-collapse">
               <thead className="sticky top-0 z-10">
                 <tr className="bg-gray-50 border-b border-gray-200 text-left">
                   <th className="px-3 py-1.5 font-medium text-gray-500">Сотрудник</th>
-                  <th className="px-3 py-1.5 font-medium text-gray-500 text-right w-28">Оклад</th>
+                  <th className="px-3 py-1.5 font-medium text-gray-500 text-right w-28">Маржа</th>
+                  <th className="px-3 py-1.5 font-medium text-gray-500 text-right w-28" title="Расчётный оклад по уровню. Кликни для корректировки.">Оклад</th>
                   <th className="px-3 py-1.5 font-medium text-gray-500 text-right w-24">Бонусы</th>
                   <th className="px-3 py-1.5 font-medium text-gray-500 text-right w-28">Доначисл.</th>
                   <th className="px-3 py-1.5 font-medium text-gray-500 text-right w-20">НДФЛ</th>
                   <th className="px-3 py-1.5 font-medium text-gray-500 text-right w-24">Штрафы</th>
-                  <th className="px-3 py-1.5 font-medium text-gray-500 text-right w-28" title="Авансы по ремонтам (забрал)">Ремонты</th>
+                  <th className="px-3 py-1.5 font-medium text-gray-500 text-right w-28" title="Вычтено авансов (не ВМР)">Ремонты</th>
                   <th className="px-3 py-1.5 font-medium text-gray-500 text-right w-32 bg-yellow-50/60">Итого ЗП</th>
                   <th className="px-3 py-1.5 font-medium text-gray-500 text-right w-28 bg-blue-50/60">Выплачено</th>
                   <th className="px-3 py-1.5 font-medium text-gray-500 text-right w-32 bg-green-50/60">Остаток</th>
@@ -713,26 +741,81 @@ export default function SalaryPage() {
               </thead>
               <tbody>
                 {stats.map((s, i) => {
-                  const expanded = expandedStats.has(s.name)
+                  const expanded     = expandedStats.has(s.name)
+                  const isEditing    = editSalary?.name === s.name
                   return (
                     <Fragment key={s.name}>
-                      <tr onClick={() => toggleExpandStats(s.name)}
+                      <tr onClick={() => { if (!isEditing) toggleExpandStats(s.name) }}
                         className={`border-b border-gray-100 cursor-pointer select-none ${
                           expanded ? 'bg-gray-50' : i % 2 === 1 ? 'bg-gray-50/30 hover:bg-gray-50/60' : 'hover:bg-gray-50/60'
                         }`}>
-                        <td className="px-3 py-1.5 font-medium text-gray-800 flex items-center gap-1.5">
-                          <span className={`text-gray-300 transition-transform text-[10px] ${expanded ? 'rotate-90' : ''}`}>▶</span>
-                          {s.name}
+                        <td className="px-3 py-1.5 font-medium text-gray-800">
+                          <div className="flex items-center gap-1.5">
+                            <span className={`text-gray-300 transition-transform text-[10px] ${expanded ? 'rotate-90' : ''}`}>▶</span>
+                            <span>{s.name}</span>
+                            {/* Даты в подсказке */}
+                            {(s.accrualDates.length > 0 || s.paymentDates.length > 0) && (
+                              <span className="text-[10px] text-gray-400 font-normal hidden sm:inline">
+                                {s.accrualDates.length > 0 && `· доначисл. ${s.accrualDates.map(fmtDate).join(', ')}`}
+                                {s.paymentDates.length > 0 && ` · выплата ${s.paymentDates.map(fmtDate).join(', ')}`}
+                              </span>
+                            )}
+                          </div>
                         </td>
-                        <td className="px-3 py-1.5 text-right text-gray-700">{s.estimatedSalary > 0 ? fmt(s.estimatedSalary) : '—'}</td>
+                        <td className="px-3 py-1.5 text-right text-gray-500 tabular-nums">
+                          {s.margin > 0 ? fmt(s.margin) : '—'}
+                        </td>
+                        {/* Оклад с редактированием */}
+                        <td className="px-3 py-1.5 text-right" onClick={e => e.stopPropagation()}>
+                          {isAdmin && isEditing ? (
+                            <div className="flex items-center gap-1 justify-end">
+                              <input
+                                type="number" min={0}
+                                className="w-24 px-1.5 py-0.5 text-xs border border-[#FFD600] rounded focus:outline-none text-right"
+                                value={editSalary.value}
+                                onChange={e => setEditSalary(v => v ? { ...v, value: e.target.value } : v)}
+                                onKeyDown={e => { if (e.key === 'Enter') saveSalaryCorrection(s); if (e.key === 'Escape') setEditSalary(null) }}
+                                autoFocus
+                              />
+                              <button onClick={() => saveSalaryCorrection(s)} disabled={savingSalary}
+                                className="text-[10px] px-1.5 py-0.5 rounded bg-gray-900 text-white disabled:opacity-50">✓</button>
+                              <button onClick={() => setEditSalary(null)}
+                                className="text-[10px] px-1 py-0.5 rounded bg-gray-100 text-gray-500">✕</button>
+                            </div>
+                          ) : (
+                            <div className="flex items-center gap-1 justify-end group">
+                              <span className={`tabular-nums ${s.salaryCorrection !== 0 ? 'text-blue-700 font-medium' : 'text-gray-700'}`}>
+                                {s.finalSalary > 0 ? fmt(s.finalSalary) : '—'}
+                              </span>
+                              {s.salaryCorrection !== 0 && (
+                                <span className={`text-[10px] ${s.salaryCorrection > 0 ? 'text-blue-500' : 'text-red-400'}`}>
+                                  ({s.salaryCorrection > 0 ? '+' : ''}{fmt(Math.abs(s.salaryCorrection))})
+                                </span>
+                              )}
+                              {isAdmin && (
+                                <button
+                                  onClick={() => setEditSalary({ name: s.name, value: String(s.finalSalary) })}
+                                  className="opacity-0 group-hover:opacity-100 text-gray-300 hover:text-gray-600 text-[11px] leading-none transition-opacity ml-0.5"
+                                  title="Скорректировать оклад">✏</button>
+                              )}
+                            </div>
+                          )}
+                        </td>
                         <td className="px-3 py-1.5 text-right text-green-600">{s.bonus > 0 ? fmt(s.bonus) : '—'}</td>
                         <td className="px-3 py-1.5 text-right text-blue-600">{s.addon > 0 ? fmt(s.addon) : '—'}</td>
                         <td className="px-3 py-1.5 text-right text-red-400">{s.ndfl > 0 ? fmt(s.ndfl) : '—'}</td>
                         <td className="px-3 py-1.5 text-right text-red-600">{s.fine > 0 ? fmt(s.fine) : '—'}</td>
                         <td className="px-3 py-1.5 text-right text-orange-500">
                           {s.repairTaken > 0
-                            ? <span title={`Всего ремонтов: ${fmt(s.totalRepair)}`}>{fmt(s.repairTaken)}</span>
-                            : '—'}
+                            ? <span title={`Всего ремонтов: ${fmt(s.totalRepair)}${s.totalRepairHM > 0 ? ` · ВМР (не вычит.): ${fmt(s.totalRepairHM)}` : ''}`}>
+                                {fmt(s.repairTaken)}
+                                {s.repairTakenHM > 0 && (
+                                  <span className="ml-1 text-[10px] text-emerald-600">+{fmt(s.repairTakenHM)} ВМР</span>
+                                )}
+                              </span>
+                            : s.repairTakenHM > 0
+                              ? <span className="text-emerald-600 text-[10px]">+{fmt(s.repairTakenHM)} ВМР</span>
+                              : '—'}
                         </td>
                         <td className={`px-3 py-2 text-right font-semibold bg-yellow-50/40 ${s.accrued >= 0 ? 'text-gray-800' : 'text-red-600'}`}>
                           {fmt(s.accrued)}
@@ -746,7 +829,18 @@ export default function SalaryPage() {
                       </tr>
                       {expanded && (
                         <tr className="border-b border-gray-100 bg-gray-50/50">
-                          <td colSpan={11} className="px-6 py-2.5">
+                          <td colSpan={12} className="px-6 py-2.5">
+                            {/* Даты доначисления и выплаты */}
+                            {(s.accrualDates.length > 0 || s.paymentDates.length > 0) && (
+                              <div className="flex gap-4 mb-2 text-[11px] text-gray-500">
+                                {s.accrualDates.length > 0 && (
+                                  <span>Доначисление: {s.accrualDates.map(fmtDate).join(', ')}</span>
+                                )}
+                                {s.paymentDates.length > 0 && (
+                                  <span>Выплата ЗП: {s.paymentDates.map(fmtDate).join(', ')}</span>
+                                )}
+                              </div>
+                            )}
                             <table className="w-full min-w-[620px] text-[11px]">
                               <thead>
                                 <tr className="text-gray-400 border-b border-gray-200">
@@ -757,8 +851,41 @@ export default function SalaryPage() {
                                 </tr>
                               </thead>
                               <tbody className="divide-y divide-gray-100">
+                                {/* Оклад расчётный */}
+                                <tr className="hover:bg-white/60">
+                                  <td className="py-1.5 pr-3">
+                                    <span className="text-[10px] px-1.5 py-0.5 rounded font-medium bg-gray-100 text-gray-600">Оклад (расчёт)</span>
+                                  </td>
+                                  <td className="py-1.5 pr-3 text-gray-400">по уровню маржи</td>
+                                  <td className="py-1.5 text-right text-gray-400">—</td>
+                                  <td className="py-1.5 text-right font-medium text-gray-700">{fmt(s.estimatedSalary)}</td>
+                                </tr>
+                                {s.salaryCorrection !== 0 && (
+                                  <tr className="hover:bg-white/60 bg-blue-50/20">
+                                    <td className="py-1.5 pr-3">
+                                      <span className="text-[10px] px-1.5 py-0.5 rounded font-medium bg-blue-100 text-blue-700">Корректировка</span>
+                                    </td>
+                                    <td className="py-1.5 pr-3 text-gray-400">ручная корректировка оклада</td>
+                                    <td className="py-1.5 text-right text-gray-400">—</td>
+                                    <td className={`py-1.5 text-right font-medium ${s.salaryCorrection > 0 ? 'text-blue-600' : 'text-red-500'}`}>
+                                      {s.salaryCorrection > 0 ? '+' : ''}{fmt(Math.abs(s.salaryCorrection))}
+                                    </td>
+                                  </tr>
+                                )}
+                                {/* ВМР ремонты (не вычитаются) */}
+                                {s.totalRepairHM > 0 && (
+                                  <tr className="hover:bg-white/60 bg-emerald-50/20">
+                                    <td className="py-1.5 pr-3">
+                                      <span className="text-[10px] px-1.5 py-0.5 rounded font-medium bg-emerald-100 text-emerald-700">Ремонты ВМР</span>
+                                    </td>
+                                    <td className="py-1.5 pr-3 text-gray-400">сверх оклада, не вычитаются</td>
+                                    <td className="py-1.5 text-right text-gray-400">—</td>
+                                    <td className="py-1.5 text-right font-medium text-emerald-700">+{fmt(s.totalRepairHM)}</td>
+                                  </tr>
+                                )}
                                 {s.details.map((d, di) => {
-                                  const isDeduct = d.actionType === 'Штраф' || d.actionType === 'Работа по ремонту'
+                                  const isDeduct = d.actionType === 'Штраф' ||
+                                    (d.actionType === 'Работа по ремонту' && d.subType !== 'ВМР')
                                   return (
                                     <tr key={di} className="hover:bg-white/60">
                                       <td className="py-1.5 pr-3">
@@ -792,7 +919,8 @@ export default function SalaryPage() {
               <tfoot>
                 <tr className="border-t-2 border-gray-200 bg-gray-50 font-semibold text-xs">
                   <td className="px-3 py-1.5 text-gray-700">Итого</td>
-                  <td className="px-3 py-1.5 text-right text-gray-700">{fmt(stats.reduce((s, r) => s + r.estimatedSalary, 0))}</td>
+                  <td className="px-3 py-1.5 text-right text-gray-500">{fmt(stats.reduce((s, r) => s + r.margin, 0))}</td>
+                  <td className="px-3 py-1.5 text-right text-gray-700">{fmt(stats.reduce((s, r) => s + r.finalSalary, 0))}</td>
                   <td className="px-3 py-1.5 text-right text-green-600">{fmt(stats.reduce((s, r) => s + r.bonus, 0))}</td>
                   <td className="px-3 py-1.5 text-right text-blue-600">{fmt(stats.reduce((s, r) => s + r.addon, 0))}</td>
                   <td className="px-3 py-1.5 text-right text-red-400">{fmt(stats.reduce((s, r) => s + r.ndfl, 0))}</td>

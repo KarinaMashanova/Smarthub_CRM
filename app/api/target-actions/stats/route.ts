@@ -18,7 +18,6 @@ export async function GET(req: NextRequest) {
 
   const nameFilter = session.role === 'MANAGER' ? session.name : employee || null
 
-  // ── 1. TargetAction записи за период ─────────────────────────────────────
   const taWhere: any = { date: { gte: from, lte: to } }
   if (nameFilter) taWhere.employeeName = session.role === 'MANAGER'
     ? nameFilter
@@ -46,7 +45,11 @@ export async function GET(req: NextRequest) {
   const [rows, tiers, scheduleSlots, orders, salePositions] = await Promise.all([
     prisma.targetAction.findMany({
       where: taWhere,
-      select: { employeeName: true, actionType: true, subType: true, source: true, amount: true, isTaken: true },
+      select: {
+        employeeName: true, actionType: true, subType: true, source: true,
+        amount: true, isTaken: true, isHighMargin: true, orderId: true,
+        date: true, paymentDate: true,
+      },
     }),
     prisma.salaryTier.findMany({ orderBy: { minMargin: 'asc' } }),
     prisma.scheduleSlot.findMany({
@@ -55,7 +58,7 @@ export async function GET(req: NextRequest) {
     }),
     prisma.order.findMany({
       where: orderWhere,
-      select: { managerName: true, revenue: true, positions: { select: { purchasePriceSumm: true } } },
+      select: { id: true, managerName: true, revenue: true, positions: { select: { purchasePriceSumm: true } } },
     }),
     prisma.salePosition.findMany({
       where: saleWhere,
@@ -83,6 +86,16 @@ export async function GET(req: NextRequest) {
     marginMap.set(n, (marginMap.get(n) ?? 0) + p.soldPrice * p.count - p.purchasePriceSumm)
   }
 
+  // Множество VMR заказов (маржа ≥ 5000) для правильной обработки ремонтов
+  const vmrOrderIds = new Set<string>(
+    orders
+      .filter(o => {
+        const cost = o.positions.reduce((s, p) => s + p.purchasePriceSumm, 0)
+        return (o.revenue - cost) >= 5000
+      })
+      .map(o => o.id)
+  )
+
   function getEstimatedSalary(name: string): number {
     if (!tiers.length || totalWorkingDays === 0) return 0
     const margin    = Math.round(marginMap.get(name) ?? 0)
@@ -92,41 +105,61 @@ export async function GET(req: NextRequest) {
     return Math.round((tier.salary / totalWorkingDays) * empShifts)
   }
 
-  // ── Аккумулятор ───────────────────────────────────────────────────────────
   type Detail = { actionType: string; subType: string | null; count: number; amount: number }
   type Acc = {
-    bonus: number; addon: number
+    bonus: number; addon: number; salaryCorrection: number
     ndfl: number; fine: number
     repairEarned: number; repairTaken: number
+    repairEarnedHM: number; repairTakenHM: number   // ВМР-ремонты — не вычитаются из оклада
     paidSalary: number
+    accrualDates: string[]    // даты Доначисления Оклада
+    paymentDates: string[]    // даты Выплаты Зарплаты
     detailMap: Record<string, Detail>
   }
   const empty = (): Acc => ({
-    bonus: 0, addon: 0,
-    ndfl: 0, fine: 0, repairEarned: 0, repairTaken: 0, paidSalary: 0,
+    bonus: 0, addon: 0, salaryCorrection: 0,
+    ndfl: 0, fine: 0,
+    repairEarned: 0, repairTaken: 0,
+    repairEarnedHM: 0, repairTakenHM: 0,
+    paidSalary: 0,
+    accrualDates: [], paymentDates: [],
     detailMap: {},
   })
 
   const map: Record<string, Acc> = {}
   const get = (name: string) => { if (!map[name]) map[name] = empty(); return map[name] }
 
-  // TargetAction
   for (const r of rows) {
     const e = get(r.employeeName)
+    const dateISO = r.date.toISOString().slice(0, 10)
+
     if (r.actionType === 'Бонус') {
       e.bonus += r.amount
     } else if (r.actionType === 'Доначисление Оклада') {
-      e.addon += r.amount
+      if (r.subType === 'Корректировка оклада') {
+        e.salaryCorrection += r.amount  // корректировка хранится как дельта
+      } else {
+        e.addon += r.amount
+      }
+      if (!e.accrualDates.includes(dateISO)) e.accrualDates.push(dateISO)
     } else if (r.actionType === 'Штраф') {
       if (r.subType === 'НДФЛ') e.ndfl += r.amount
       else e.fine += r.amount
     } else if (r.actionType === 'Работа по ремонту') {
-      if (r.isTaken) e.repairTaken += r.amount
-      else e.repairEarned += r.amount
+      const isVMR = r.isHighMargin || (r.orderId ? vmrOrderIds.has(r.orderId) : false)
+      if (isVMR) {
+        if (r.isTaken) e.repairTakenHM += r.amount
+        else e.repairEarnedHM += r.amount
+      } else {
+        if (r.isTaken) e.repairTaken += r.amount
+        else e.repairEarned += r.amount
+      }
     } else if (r.actionType === 'Выплата Зарплаты') {
       e.paidSalary += r.amount
+      if (!e.paymentDates.includes(dateISO)) e.paymentDates.push(dateISO)
     }
 
+    // детализация для expanded-строки
     const key = `${r.actionType}__${r.subType ?? ''}`
     if (!e.detailMap[key]) e.detailMap[key] = { actionType: r.actionType, subType: r.subType, count: 0, amount: 0 }
     e.detailMap[key].count++
@@ -137,23 +170,30 @@ export async function GET(req: NextRequest) {
 
   const stats = Object.entries(map)
     .map(([name, d]) => {
-      const totalRepair      = d.repairEarned + d.repairTaken
-      const estimatedSalary  = getEstimatedSalary(name)
-      const accrued          = estimatedSalary + d.bonus + d.addon - d.ndfl - d.fine - d.repairTaken
-      const остаток          = accrued - d.paidSalary
+      const totalRepair     = d.repairEarned + d.repairTaken
+      const totalRepairHM   = d.repairEarnedHM + d.repairTakenHM
+      const estimatedSalary = getEstimatedSalary(name)
+      const finalSalary     = estimatedSalary + d.salaryCorrection
+      const margin          = Math.round(marginMap.get(name) ?? 0)
+      // ВМР-ремонты НЕ вычитаются; обычные ремонты — вычитаются
+      const accrued         = finalSalary + d.bonus + d.addon - d.ndfl - d.fine - d.repairTaken
+      const остаток         = accrued - d.paidSalary
       return {
-        name,
-        bonus: d.bonus, addon: d.addon,
+        name, margin,
+        bonus: d.bonus, addon: d.addon, salaryCorrection: d.salaryCorrection,
         ndfl: d.ndfl, fine: d.fine,
         repairEarned: d.repairEarned, repairTaken: d.repairTaken, totalRepair,
-        paidSalary: d.paidSalary, estimatedSalary, accrued, остаток,
+        repairEarnedHM: d.repairEarnedHM, repairTakenHM: d.repairTakenHM, totalRepairHM,
+        paidSalary: d.paidSalary, estimatedSalary, finalSalary, accrued, остаток,
+        accrualDates: d.accrualDates.sort(),
+        paymentDates: d.paymentDates.sort(),
         details: Object.values(d.detailMap).sort((a, b) => {
           const ti = TYPE_ORDER.indexOf(a.actionType) - TYPE_ORDER.indexOf(b.actionType)
           return ti !== 0 ? ti : b.amount - a.amount
         }),
       }
     })
-    .filter(s => s.bonus + s.addon + s.ndfl + s.fine + s.totalRepair + s.paidSalary > 0)
+    .filter(s => s.bonus + s.addon + s.ndfl + s.fine + s.totalRepair + s.totalRepairHM + s.paidSalary > 0)
     .sort((a, b) => b.accrued - a.accrued)
 
   return NextResponse.json({ stats })
