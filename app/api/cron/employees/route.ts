@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { runWeeklySync } from '@/lib/sync'
 
+export const maxDuration = 300
+
 export async function GET(req: NextRequest) {
   const auth = req.headers.get('authorization')
   if (auth !== `Bearer ${process.env.CRON_SECRET}`) {

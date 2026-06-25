@@ -4,13 +4,14 @@ import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
 
 interface ShopRaw   { id: string; name: string; groupId: number | null; gangsterThreshold: number | null }
-interface GroupRaw  { id: number; name: string; threshold: number | null; shops: { id: string }[] }
+interface GroupRaw  { id: number; name: string; threshold: number | null; isIndividual: boolean; shops: { id: string }[] }
 
 interface GroupState {
-  id:        number | null
-  name:      string
-  threshold: string
-  shopIds:   string[]
+  id:           number | null
+  name:         string
+  threshold:    string
+  isIndividual: boolean
+  shopIds:      string[]
 }
 interface ShopState {
   id:        string
@@ -33,10 +34,11 @@ export default function GangsterPage() {
         const grps:  GroupRaw[] = d.groups ?? []
         setAllShops(shops)
         setGroups(grps.map(g => ({
-          id:        g.id,
-          name:      g.name,
-          threshold: g.threshold != null ? String(g.threshold) : '',
-          shopIds:   g.shops.map(s => s.id),
+          id:           g.id,
+          name:         g.name,
+          threshold:    g.threshold != null ? String(g.threshold) : '',
+          isIndividual: g.isIndividual ?? false,
+          shopIds:      g.shops.map(s => s.id),
         })))
         const meta: Record<string, ShopState> = {}
         for (const s of shops) meta[s.id] = { id: s.id, name: s.name, threshold: s.gangsterThreshold != null ? String(s.gangsterThreshold) : '' }
@@ -48,7 +50,7 @@ export default function GangsterPage() {
   useEffect(() => { load() }, [load])
 
   function addGroup() {
-    setGroups(g => [...g, { id: null, name: '', threshold: '', shopIds: [] }])
+    setGroups(g => [...g, { id: null, name: '', threshold: '', isIndividual: false, shopIds: [] }])
   }
 
   function removeGroup(idx: number) {
@@ -88,10 +90,11 @@ export default function GangsterPage() {
         groups: groups
           .filter(g => g.name.trim())
           .map(g => ({
-            id:        g.id,
-            name:      g.name.trim(),
-            threshold: g.threshold ? parseFloat(g.threshold) : null,
-            shopIds:   g.shopIds,
+            id:           g.id,
+            name:         g.name.trim(),
+            threshold:    g.threshold ? parseFloat(g.threshold) : null,
+            isIndividual: g.isIndividual,
+            shopIds:      g.shopIds,
           })),
         shops: ungroupedShops.map(s => ({
           id:                s.id,
@@ -136,6 +139,15 @@ export default function GangsterPage() {
                   className="flex-1 text-sm font-medium bg-transparent border-none outline-none text-gray-800 placeholder-gray-400"
                 />
                 <div className="flex items-center gap-1 shrink-0">
+                  <label className="flex items-center gap-1 cursor-pointer select-none" title="Индивидуальный порог: бонус только тому, кто лично достиг порога">
+                    <input
+                      type="checkbox"
+                      checked={g.isIndividual}
+                      onChange={e => updateGroup(idx, { isIndividual: e.target.checked })}
+                      className="w-3.5 h-3.5 accent-gray-700"
+                    />
+                    <span className="text-[11px] text-gray-500 whitespace-nowrap">Личный</span>
+                  </label>
                   <input
                     type="number" min={0} step={1000}
                     value={g.threshold}
@@ -223,7 +235,8 @@ export default function GangsterPage() {
 
       <div className="mt-8 bg-amber-50 border border-amber-100 rounded-xl p-4 text-xs text-amber-800 space-y-1">
         <p className="font-medium">Как работает</p>
-        <p>Группа: суммируется маржа всех сотрудников группы за день. Если сумма ≥ порога — каждый получает 1 000 ₽.</p>
+        <p>Группа (суммарный режим): суммируется маржа всех сотрудников группы за день. Если сумма ≥ порога — каждый получает 1 000 ₽.</p>
+        <p>Группа (личный режим, ☑ Личный): бонус получает только тот сотрудник, чья личная маржа ≥ порога.</p>
         <p>Одиночный салон: маржа конкретного сотрудника сравнивается с порогом салона.</p>
         <p>Бонусы пересчитываются автоматически при каждой синхронизации.</p>
       </div>

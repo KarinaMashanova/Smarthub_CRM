@@ -14,10 +14,11 @@ model SalaryTier {
 }
 
 model ShopGroup {
-  id        Int     @id @default(autoincrement())
-  name      String  @unique
-  threshold Float?
-  shops     Shop[]
+  id           Int     @id @default(autoincrement())
+  name         String  @unique
+  threshold    Float?
+  isIndividual Boolean @default(false)  // если true — бонус каждому кто лично достиг порога
+  shops        Shop[]
 }
 
 model Shop {
@@ -48,6 +49,7 @@ model Employee {
   role          String   // "manager" | "master" | "all" (из LiveSklad)
   shopId        String
   shop          Shop     @relation(fields: [shopId], references: [id])
+  sales         Sale[]   @relation("SaleSeller")
   // Smarthub авторизация
   appRole       Role?    // null = нет доступа в систему
   passwordHash  String?
@@ -149,6 +151,8 @@ model Sale {
   dateChange DateTime?
 
   // Продавец
+  sellerId   String?
+  seller     Employee? @relation("SaleSeller", fields: [sellerId], references: [id], onDelete: SetNull)
   sellerName String?
 
   // Финансы (из API)
@@ -163,6 +167,8 @@ model Sale {
   syncedAt DateTime @default(now()) @updatedAt
 
   positions SalePosition[]
+
+  @@index([sellerId])
 }
 
 model SalePosition {

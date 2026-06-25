@@ -10,7 +10,7 @@ export async function GET() {
   }
   const [groups, shops] = await Promise.all([
     prisma.shopGroup.findMany({
-      select: { id: true, name: true, threshold: true, shops: { select: { id: true } } },
+      select: { id: true, name: true, threshold: true, isIndividual: true, shops: { select: { id: true } } },
       orderBy: { name: 'asc' },
     }),
     prisma.shop.findMany({
@@ -30,7 +30,7 @@ export async function POST(req: NextRequest) {
   }
 
   const body = await req.json() as {
-    groups: { id: number | null; name: string; threshold: number | null; shopIds: string[] }[]
+    groups: { id: number | null; name: string; threshold: number | null; isIndividual: boolean; shopIds: string[] }[]
     shops:  { id: string; gangsterThreshold: number | null }[]   // ungrouped shops
   }
 
@@ -42,12 +42,12 @@ export async function POST(req: NextRequest) {
     if (g.id) {
       record = await prisma.shopGroup.update({
         where: { id: g.id },
-        data: { name: g.name.trim(), threshold: g.threshold },
+        data: { name: g.name.trim(), threshold: g.threshold, isIndividual: g.isIndividual ?? false },
         select: { id: true },
       })
     } else {
       record = await prisma.shopGroup.create({
-        data: { name: g.name.trim(), threshold: g.threshold },
+        data: { name: g.name.trim(), threshold: g.threshold, isIndividual: g.isIndividual ?? false },
         select: { id: true },
       })
     }

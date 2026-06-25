@@ -13,7 +13,7 @@ export async function calcGangsterBonuses(opts?: { fromDate?: Date; toDate?: Dat
   // ── Группы ────────────────────────────────────────────────────────────────
   const groups = await prisma.shopGroup.findMany({
     where: { threshold: { not: null } },
-    select: { id: true, name: true, threshold: true, shops: { select: { name: true } } },
+    select: { id: true, name: true, threshold: true, isIndividual: true, shops: { select: { name: true } } },
   })
   // shopName → groupId
   const shopNameToGroupId = new Map<string, number>()
@@ -112,30 +112,54 @@ export async function calcGangsterBonuses(opts?: { fromDate?: Date; toDate?: Dat
     }
 
     for (const [day, emps] of dayToEmps.entries()) {
-      // Суммируем маржу всех сотрудников группы за этот день
-      let totalMargin = 0
-      for (const emp of emps) totalMargin += marginByKey.get(`${day}__${emp}`) ?? 0
+      if (group.isIndividual) {
+        // Индивидуальный режим: бонус только тем, кто лично достиг порога
+        for (const empName of emps) {
+          const margin = marginByKey.get(`${day}__${empName}`) ?? 0
+          if (margin < group.threshold) continue
 
-      if (totalMargin < group.threshold) continue
+          const key = `${day}__${empName}`
+          shouldHave.add(key)
+          if (existingMap.has(key)) continue
 
-      // Всем сотрудникам начисляем бонус
-      for (const empName of emps) {
-        const key = `${day}__${empName}`
-        shouldHave.add(key)
-        if (existingMap.has(key)) continue
+          await prisma.targetAction.create({
+            data: {
+              date:         new Date(day),
+              actionType:   'Бонус',
+              subType:      'За Гангстера',
+              employeeName: empName,
+              amount:       1000,
+              source:       'AUTO',
+              comment:      `${group.name} · личная маржа: ${Math.round(margin).toLocaleString('ru-RU')} ₽`,
+            },
+          })
+          created++
+        }
+      } else {
+        // Групповой режим: суммируем маржу всех, бонус — всем при достижении
+        let totalMargin = 0
+        for (const emp of emps) totalMargin += marginByKey.get(`${day}__${emp}`) ?? 0
 
-        await prisma.targetAction.create({
-          data: {
-            date:         new Date(day),
-            actionType:   'Бонус',
-            subType:      'За Гангстера',
-            employeeName: empName,
-            amount:       1000,
-            source:       'AUTO',
-            comment:      `${group.name} · суммарная маржа: ${Math.round(totalMargin).toLocaleString('ru-RU')} ₽`,
-          },
-        })
-        created++
+        if (totalMargin < group.threshold) continue
+
+        for (const empName of emps) {
+          const key = `${day}__${empName}`
+          shouldHave.add(key)
+          if (existingMap.has(key)) continue
+
+          await prisma.targetAction.create({
+            data: {
+              date:         new Date(day),
+              actionType:   'Бонус',
+              subType:      'За Гангстера',
+              employeeName: empName,
+              amount:       1000,
+              source:       'AUTO',
+              comment:      `${group.name} · суммарная маржа: ${Math.round(totalMargin).toLocaleString('ru-RU')} ₽`,
+            },
+          })
+          created++
+        }
       }
     }
   }
