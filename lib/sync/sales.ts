@@ -25,6 +25,8 @@ function buildSaleRow(data: any, shopId: string) {
   const revenue     = cashMoney + cashBank + cashInvoice
   const refund      = data.cash?.orderReturn ?? 0
   const isReturn    = (data.positions ?? []).some((p: any) => (p.returnCount ?? 0) > 0)
+  const seller       = data.responsible ?? data.employee ?? data.createdBy ?? null
+  const sellerName   = seller?.name ?? data.customer?.name ?? null
 
   const paymentTypes = [...new Set(
     (data.cash?.elements ?? []).map((e: any) => e.isBankTransfer ? 'Безнал' : 'Наличные')
@@ -36,7 +38,8 @@ function buildSaleRow(data: any, shopId: string) {
     shopId:      data.shop?.id   ?? shopId,
     date:        data.date       ? new Date(data.date)       : null,
     dateChange:  data.dateChange ? new Date(data.dateChange) : null,
-    sellerName:  data.responsible?.name ?? data.employee?.name ?? data.customer?.name ?? data.createdBy?.name ?? null,
+    sellerId:    seller?.id      ?? null,
+    sellerName,
     cashMoney,
     cashBank,
     cashInvoice,
@@ -122,6 +125,13 @@ async function upsertSaleBonus(row: ReturnType<typeof buildSaleRow>, positions: 
 export async function syncSaleDetail(detail: any, shopId: string) {
   const row       = buildSaleRow(detail, shopId)
   const positions = buildPositions(detail)
+  if (row.sellerId) {
+    const employeeExists = await prisma.employee.findUnique({
+      where: { id: row.sellerId },
+      select: { id: true },
+    })
+    if (!employeeExists) row.sellerId = null
+  }
 
   await prisma.sale.upsert({ where: { id: row.id }, update: row, create: row })
 

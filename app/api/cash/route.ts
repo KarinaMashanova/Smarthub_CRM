@@ -38,6 +38,7 @@ export async function GET(req: NextRequest) {
   const to = searchParams.get('to')
     ? new Date(searchParams.get('to')!)
     : new Date(new Date().setHours(23, 59, 59, 999))
+  to.setHours(23, 59, 59, 999)
 
   const isManager = session.role === 'MANAGER'
   const { shops: allShops, scheduledShops } = isManager

@@ -38,20 +38,19 @@ export async function GET(req: NextRequest) {
       },
       select: {
         name: true, soldPrice: true, count: true, purchasePriceSumm: true,
-        order: { select: { shopId: true, revenue: true, paymentType: true } },
+        order: { select: { id: true, shopId: true, revenue: true, paymentType: true } },
       },
     }),
     prisma.salePosition.findMany({
       where: {
-        isWork: false,
         sale: {
           isReturn: false,
           date: { gte: from, lte: to },
         },
       },
       select: {
-        name: true, soldPrice: true, count: true, purchasePriceSumm: true,
-        sale: { select: { shopId: true, cashMoney: true, cashBank: true, cashInvoice: true } },
+        name: true, soldPrice: true, count: true, purchasePriceSumm: true, isWork: true,
+        sale: { select: { id: true, shopId: true, cashMoney: true, cashBank: true, cashInvoice: true } },
       },
     }),
   ])
@@ -115,6 +114,13 @@ export async function GET(req: NextRequest) {
     const lsCost     = pos.purchasePriceSumm
     const lsMargin   = posRevenue - lsCost
 
+    // Для работ (isWork=true) реальной закупочной цены нет — считаем как в LS
+    if (pos.isWork) {
+      shop.liveSkladMargin += lsMargin
+      shop.realMargin      += lsMargin
+      continue
+    }
+
     const realCost   = realCostMap.has(pos.name)
       ? realCostMap.get(pos.name)! * pos.count
       : lsCost
@@ -132,20 +138,11 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  // Выручка и налогооблагаемая выручка — считаем по заказам и продажам на уровне документа
-  const orderDocs = new Map<string, { shopId: string; revenue: number; paymentType: string | null }>()
-  for (const pos of orderPositions) {
-    if (!orderDocs.has(pos.order.shopId + pos.order.revenue)) {
-      orderDocs.set(pos.order.shopId + pos.order.revenue + pos.order.paymentType, pos.order)
-    }
-  }
-
   // Выручка из заказов (по уникальным заказам)
   const seenOrders = new Set<string>()
   for (const pos of orderPositions) {
-    const key = `${pos.order.shopId}|${pos.order.revenue}|${pos.order.paymentType}`
-    if (seenOrders.has(key)) continue
-    seenOrders.add(key)
+    if (seenOrders.has(pos.order.id)) continue
+    seenOrders.add(pos.order.id)
     const shop = shopMap.get(pos.order.shopId)
     if (!shop) continue
     shop.revenue += pos.order.revenue
@@ -157,9 +154,8 @@ export async function GET(req: NextRequest) {
   // Выручка из продаж
   const seenSales = new Set<string>()
   for (const pos of salePositions) {
-    const saleKey = `${pos.sale.shopId}|${pos.sale.cashMoney}|${pos.sale.cashBank}|${pos.sale.cashInvoice}`
-    if (seenSales.has(saleKey)) continue
-    seenSales.add(saleKey)
+    if (seenSales.has(pos.sale.id)) continue
+    seenSales.add(pos.sale.id)
     const shop = shopMap.get(pos.sale.shopId)
     if (!shop) continue
     const total = pos.sale.cashMoney + pos.sale.cashBank + pos.sale.cashInvoice
