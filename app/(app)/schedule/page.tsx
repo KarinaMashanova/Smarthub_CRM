@@ -88,6 +88,7 @@ export default function SchedulePage() {
   const [editing, setEditing]     = useState<number|null>(null)
   const [editValue, setEditValue] = useState('')
   const [empList, setEmpList]     = useState<string[]>([])
+  const [allLocations, setAllLocations] = useState<string[]>([])
   const [showHelp, setShowHelp]   = useState(false)
   const [creatingSlot, setCreatingSlot] = useState<{ loc: string; si: number; date: string } | null>(null)
   const [createValue, setCreateValue] = useState('')
@@ -139,6 +140,10 @@ export default function SchedulePage() {
       .then(r => r.ok ? r.json() : [])
       .then(d => setEmpList(Array.isArray(d) ? d : []))
       .catch(()=> setEmpList([]))
+    fetch('/api/schedule/locations', { cache: 'no-store' })
+      .then(r => r.ok ? r.json() : [])
+      .then(d => setAllLocations(Array.isArray(d) ? d : []))
+      .catch(()=> setAllLocations([]))
   }, [])
 
   async function loadGrid() {
@@ -220,6 +225,14 @@ export default function SchedulePage() {
     if (isAdmin && isMultiSlot(loc)) {
       locSlots[loc].add(0)
       locSlots[loc].add(1)
+    }
+  }
+  // Показываем все известные салоны админу, даже если на эту неделю ещё нет ни одной смены
+  if (isAdmin) {
+    for (const loc of allLocations) {
+      if (!locSlots[loc]) locSlots[loc] = new Set()
+      locSlots[loc].add(0)
+      if (isMultiSlot(loc)) locSlots[loc].add(1)
     }
   }
 
